@@ -63,6 +63,8 @@ export default function Dashboard() {
   const [kidName, setKidName] = useState("");
   const [hours, setHours] = useState("1");
   const [parents, setParents] = useState("1");
+  const [childSocks, setChildSocks] = useState("");
+  const [parentSocks, setParentSocks] = useState("");
   const [customFields, setCustomFields] = useState<{ id: string; label: string; value: string }[]>([]);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -99,11 +101,22 @@ export default function Dashboard() {
       });
       return;
     }
+    
+    if (!childSocks) {
+      toast({
+        title: "Socks Required",
+        description: "Please enter the child's socks ID.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     addKid({
       kidName,
       hoursOfPlay: parseFloat(hours),
       parentsCount: parseInt(parents, 10),
+      childSocks,
+      parentSocks: parentSocks || undefined,
       customFields: customFields.filter(f => f.label.trim() !== "" && f.value.trim() !== ""),
     });
 
@@ -116,6 +129,8 @@ export default function Dashboard() {
     setKidName("");
     setHours("1");
     setParents("1");
+    setChildSocks("");
+    setParentSocks("");
     setCustomFields([]);
   };
 
@@ -174,6 +189,32 @@ export default function Dashboard() {
                         <SelectItem value="2">2</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <Label htmlFor="childSocks" className="font-bold text-base text-foreground/80">Child Socks *</Label>
+                    <Input 
+                      id="childSocks" 
+                      value={childSocks} 
+                      onChange={e => setChildSocks(e.target.value)} 
+                      placeholder="e.g. C-123"
+                      className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
+                      data-testid="input-child-socks"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <Label htmlFor="parentSocks" className="font-bold text-base text-foreground/80">Parent Socks</Label>
+                    <Input 
+                      id="parentSocks" 
+                      value={parentSocks} 
+                      onChange={e => setParentSocks(e.target.value)} 
+                      placeholder="Optional"
+                      className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
+                      data-testid="input-parent-socks"
+                    />
                   </div>
                 </div>
 
@@ -311,6 +352,14 @@ export default function Dashboard() {
 
                           {/* Custom Fields (Optional) */}
                           <div className="flex-1 flex flex-wrap gap-2">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary">
+                              <span className="opacity-70 mr-1">Child Socks:</span> {kid.childSocks}
+                            </span>
+                            {kid.parentSocks && (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary">
+                                <span className="opacity-70 mr-1">Parent Socks:</span> {kid.parentSocks}
+                              </span>
+                            )}
                             {kid.customFields.map((cf, idx) => (
                               <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-secondary text-secondary-foreground">
                                 <span className="opacity-50 mr-1">{cf.label}:</span> {cf.value}

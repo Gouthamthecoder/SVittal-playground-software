@@ -14,6 +14,8 @@ export interface KidEntry {
   hoursOfPlay: number;
   parentsCount: number;
   startTime: number; // timestamp
+  childSocks: string;
+  parentSocks?: string;
   customFields: CustomField[];
 }
 
@@ -50,7 +52,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       hoursOfPlay: 1,
       parentsCount: 1,
       startTime: Date.now() - 45 * 60 * 1000, // 45 mins ago
-      customFields: [{ id: "c1", label: "Socks Number", value: "A12" }]
+      childSocks: "C-123",
+      parentSocks: "P-456",
+      customFields: [{ id: "c1", label: "Notes", value: "Allergic to peanuts" }]
     },
     {
       id: "2",
@@ -58,6 +62,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       hoursOfPlay: 2,
       parentsCount: 2,
       startTime: Date.now() - 1 * 60 * 60 * 1000 - 55 * 60 * 1000, // 1h 55m ago (almost 2 hours)
+      childSocks: "C-456",
       customFields: []
     },
     {
@@ -66,6 +71,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       hoursOfPlay: 1,
       parentsCount: 1,
       startTime: Date.now() - 65 * 60 * 1000, // 65 mins ago (overtime)
+      childSocks: "C-789",
       customFields: []
     }
   ]);
