@@ -5,8 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Users, Plus, CheckCircle, AlertTriangle, AlertCircle, X, Trash2 } from "lucide-react";
+import { Clock, Users, Plus, CheckCircle, AlertTriangle, AlertCircle, X, Trash2, Clock4 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 function StatusSummary({ kids, getKidStatus }: { kids: KidEntry[], getKidStatus: (k: KidEntry) => KidStatus }) {
   const statuses = kids.map(getKidStatus);
@@ -55,7 +57,7 @@ function StatusSummary({ kids, getKidStatus }: { kids: KidEntry[], getKidStatus:
 }
 
 export default function Dashboard() {
-  const { kids, addKid, removeKid, getKidStatus, getRemainingMinutes } = useStore();
+  const { kids, addKid, removeKid, extendTime, getKidStatus, getRemainingMinutes } = useStore();
   const { toast } = useToast();
   
   const [kidName, setKidName] = useState("");
@@ -218,84 +220,105 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
-              {kids.map((kid) => {
-                const status = getKidStatus(kid);
-                const remaining = getRemainingMinutes(kid);
-                
-                let cardClass = "";
-                let badgeClass = "";
-                let icon = null;
+            <ScrollArea className="h-[calc(100vh-220px)] pr-4 -mr-4">
+              <div className="space-y-4 pb-12">
+                {kids.map((kid) => {
+                  const status = getKidStatus(kid);
+                  const remaining = getRemainingMinutes(kid);
+                  
+                  let cardClass = "";
+                  let badgeClass = "";
+                  let icon = null;
 
-                if (status === "green") {
-                  cardClass = "bg-white border-l-8 border-success hover:shadow-md transition-shadow";
-                  badgeClass = "bg-success/10 text-success border-success/20";
-                  icon = <CheckCircle size={20} className="text-success" />;
-                } else if (status === "yellow") {
-                  cardClass = "bg-warning/5 border-l-8 border-warning hover:shadow-md transition-shadow";
-                  badgeClass = "bg-warning/20 text-warning-foreground border-warning/30";
-                  icon = <AlertTriangle size={20} className="text-warning" />;
-                } else {
-                  cardClass = "bg-danger/5 border-l-8 border-danger hover:shadow-md transition-shadow ring-2 ring-danger/20";
-                  badgeClass = "bg-danger/20 text-danger border-danger/30 animate-pulse";
-                  icon = <AlertCircle size={20} className="text-danger" />;
-                }
+                  if (status === "green") {
+                    cardClass = "bg-white border-l-8 border-success hover:shadow-md transition-shadow";
+                    badgeClass = "bg-success/10 text-success border-success/20";
+                    icon = <CheckCircle size={20} className="text-success" />;
+                  } else if (status === "yellow") {
+                    cardClass = "bg-warning/5 border-l-8 border-warning hover:shadow-md transition-shadow";
+                    badgeClass = "bg-warning/20 text-warning-foreground border-warning/30";
+                    icon = <AlertTriangle size={20} className="text-warning" />;
+                  } else {
+                    cardClass = "bg-danger/5 border-l-8 border-danger hover:shadow-md transition-shadow ring-2 ring-danger/20";
+                    badgeClass = "bg-danger/20 text-danger border-danger/30 animate-pulse";
+                    icon = <AlertCircle size={20} className="text-danger" />;
+                  }
 
-                return (
-                  <Card key={kid.id} className={`border-none shadow-sm rounded-xl overflow-hidden relative group ${cardClass}`} data-testid={`card-kid-${kid.id}`}>
-                    <CardContent className="p-0">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center p-5 gap-4 sm:gap-6">
-                        {/* Name and Status Icon */}
-                        <div className="flex items-center gap-4 min-w-[200px]">
-                          <div className="bg-background p-3 rounded-full shadow-sm">
-                            {icon}
-                          </div>
-                          <div>
-                            <h3 className="text-2xl font-extrabold text-foreground">{kid.kidName}</h3>
-                            <p className="text-sm font-bold text-muted-foreground flex items-center gap-1">
-                              <Users size={14} /> {kid.parentsCount} Parent{kid.parentsCount !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Custom Fields (Optional) */}
-                        <div className="flex-1 flex flex-wrap gap-2">
-                          {kid.customFields.map((cf, idx) => (
-                            <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-secondary text-secondary-foreground">
-                              <span className="opacity-50 mr-1">{cf.label}:</span> {cf.value}
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* Timer and Action */}
-                        <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t border-border/50 sm:border-t-0 pt-4 sm:pt-0">
-                          <div className={`px-4 py-2 rounded-xl border flex flex-col items-center min-w-[120px] ${badgeClass}`}>
-                            <span className="text-[10px] uppercase font-bold tracking-wider opacity-80 mb-0.5">
-                              {status === "red" ? "Overtime" : "Time Left"}
-                            </span>
-                            <span className="text-xl font-extrabold flex items-center gap-1.5">
-                              <Clock size={18} />
-                              {status === "red" ? `+${Math.abs(remaining)}m` : `${remaining}m`}
-                            </span>
+                  return (
+                    <Card key={kid.id} className={`border-none shadow-sm rounded-xl overflow-hidden relative group ${cardClass}`} data-testid={`card-kid-${kid.id}`}>
+                      <CardContent className="p-0">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center p-5 gap-4 sm:gap-6">
+                          {/* Name and Status Icon */}
+                          <div className="flex items-center gap-4 min-w-[200px]">
+                            <div className="bg-background p-3 rounded-full shadow-sm">
+                              {icon}
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-extrabold text-foreground">{kid.kidName}</h3>
+                              <p className="text-sm font-bold text-muted-foreground flex items-center gap-1">
+                                <Users size={14} /> {kid.parentsCount} Parent{kid.parentsCount !== 1 ? 's' : ''}
+                              </p>
+                            </div>
                           </div>
 
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-12 w-12 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            onClick={() => removeKid(kid.id)}
-                            title="End Play Session"
-                            data-testid={`button-end-${kid.id}`}
-                          >
-                            <Trash2 size={24} />
-                          </Button>
+                          {/* Custom Fields (Optional) */}
+                          <div className="flex-1 flex flex-wrap gap-2">
+                            {kid.customFields.map((cf, idx) => (
+                              <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-secondary text-secondary-foreground">
+                                <span className="opacity-50 mr-1">{cf.label}:</span> {cf.value}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Timer and Action */}
+                          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t border-border/50 sm:border-t-0 pt-4 sm:pt-0">
+                            <div className={`px-4 py-2 rounded-xl border flex flex-col items-center min-w-[120px] ${badgeClass}`}>
+                              <span className="text-[10px] uppercase font-bold tracking-wider opacity-80 mb-0.5">
+                                {status === "red" ? "Overtime" : "Time Left"}
+                              </span>
+                              <span className="text-xl font-extrabold flex items-center gap-1.5">
+                                <Clock size={18} />
+                                {status === "red" ? `+${Math.abs(remaining)}m` : `${remaining}m`}
+                              </span>
+                            </div>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="icon" 
+                                  className="h-12 w-12 rounded-xl bg-background hover:bg-secondary/80 transition-colors border-2"
+                                  title="Actions"
+                                  data-testid={`button-actions-${kid.id}`}
+                                >
+                                  <Clock4 size={20} />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48 rounded-xl p-2">
+                                <div className="px-2 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Extend Time</div>
+                                <DropdownMenuItem onClick={() => extendTime(kid.id, 0.5)} className="rounded-lg cursor-pointer font-medium py-2">
+                                  + 30 Minutes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => extendTime(kid.id, 1)} className="rounded-lg cursor-pointer font-medium py-2">
+                                  + 1 Hour
+                                </DropdownMenuItem>
+                                <div className="h-px bg-border/50 my-1 -mx-1" />
+                                <DropdownMenuItem 
+                                  onClick={() => removeKid(kid.id)} 
+                                  className="rounded-lg cursor-pointer font-medium py-2 text-destructive focus:text-destructive focus:bg-destructive/10 mt-1"
+                                >
+                                  <Trash2 size={16} className="mr-2" /> End Session
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </ScrollArea>
           )}
         </div>
       </div>

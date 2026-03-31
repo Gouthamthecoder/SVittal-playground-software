@@ -22,6 +22,7 @@ export interface StoreContextType {
   isAuthenticated: boolean;
   addKid: (kid: Omit<KidEntry, "id" | "startTime">) => void;
   removeKid: (id: string) => void;
+  extendTime: (id: string, additionalHours: number) => void;
   login: () => void;
   logout: () => void;
   getKidStatus: (kid: KidEntry) => KidStatus;
@@ -89,6 +90,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setKids((prev) => prev.filter((k) => k.id !== id));
   };
 
+  const extendTime = (id: string, additionalHours: number) => {
+    setKids((prev) =>
+      prev.map((kid) =>
+        kid.id === id
+          ? { ...kid, hoursOfPlay: kid.hoursOfPlay + additionalHours }
+          : kid
+      )
+    );
+  };
+
   const login = () => setIsAuthenticated(true);
   const logout = () => setIsAuthenticated(false);
 
@@ -113,6 +124,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         addKid,
         removeKid,
+        extendTime,
         login,
         logout,
         getKidStatus,
