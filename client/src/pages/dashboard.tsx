@@ -57,9 +57,10 @@ function StatusSummary({ kids, getKidStatus }: { kids: KidEntry[], getKidStatus:
 }
 
 export default function Dashboard() {
-  const { kids, addKid, removeKid, extendTime, getKidStatus, getRemainingMinutes } = useStore();
+  const { kids, addKid, removeKid, extendTime, getKidStatus, getRemainingMinutes, isLoading } = useStore();
   const { toast } = useToast();
-  
+  const [submitting, setSubmitting] = useState(false);
+
   const [kidName, setKidName] = useState("");
   const [hours, setHours] = useState("1");
   const [parents, setParents] = useState("1");
@@ -91,47 +92,39 @@ export default function Dashboard() {
     setCustomFields(customFields.filter(f => f.id !== id));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!kidName) {
-      toast({
-        title: "Name Required",
-        description: "Please enter the kid's name.",
-        variant: "destructive",
-      });
+      toast({ title: "Name Required", description: "Please enter the kid's name.", variant: "destructive" });
       return;
     }
-    
     if (!childSocks) {
-      toast({
-        title: "Socks Required",
-        description: "Please enter the child's socks ID.",
-        variant: "destructive",
-      });
+      toast({ title: "Socks Required", description: "Please enter the child's socks ID.", variant: "destructive" });
       return;
     }
 
-    addKid({
-      kidName,
-      hoursOfPlay: parseFloat(hours),
-      parentsCount: parseInt(parents, 10),
-      childSocks,
-      parentSocks: parentSocks || undefined,
-      customFields: customFields.filter(f => f.label.trim() !== "" && f.value.trim() !== ""),
-    });
-
-    toast({
-      title: "Success!",
-      description: `${kidName} has been added to the floor.`,
-    });
-
-    // Reset
-    setKidName("");
-    setHours("1");
-    setParents("1");
-    setChildSocks("");
-    setParentSocks("");
-    setCustomFields([]);
+    setSubmitting(true);
+    try {
+      await addKid({
+        kidName,
+        hoursOfPlay: parseFloat(hours),
+        parentsCount: parseInt(parents, 10),
+        childSocks,
+        parentSocks: parentSocks || undefined,
+        customFields: customFields.filter(f => f.label.trim() !== "" && f.value.trim() !== ""),
+      });
+      toast({ title: "Success!", description: `${kidName} has been added to the floor.` });
+      setKidName("");
+      setHours("1");
+      setParents("1");
+      setChildSocks("");
+      setParentSocks("");
+      setCustomFields([]);
+    } catch {
+      toast({ title: "Error", description: "Failed to add entry. Please try again.", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -248,8 +241,8 @@ export default function Dashboard() {
                   ))}
                 </div>
 
-                <Button type="submit" className="w-full h-14 text-lg font-bold rounded-xl mt-4" data-testid="button-submit-entry">
-                  Start Play Time
+                <Button type="submit" className="w-full h-14 text-lg font-bold rounded-xl mt-4" data-testid="button-submit-entry" disabled={submitting}>
+                  {submitting ? "Adding..." : "Start Play Time"}
                 </Button>
               </form>
             </CardContent>

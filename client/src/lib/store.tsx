@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from "react";
 
 export type KidStatus = "green" | "yellow" | "red";
 
@@ -10,10 +10,11 @@ export interface CustomField {
 
 export interface KidEntry {
   id: string;
+  sessionId: number;
   kidName: string;
   hoursOfPlay: number;
   parentsCount: number;
-  startTime: number; // timestamp
+  startTime: number;
   childSocks: string;
   parentSocks?: string;
   customFields: CustomField[];
@@ -22,8 +23,9 @@ export interface KidEntry {
 export interface StoreContextType {
   kids: KidEntry[];
   isAuthenticated: boolean;
-  addKid: (kid: Omit<KidEntry, "id" | "startTime">) => void;
-  removeKid: (id: string) => void;
+  isLoading: boolean;
+  addKid: (kid: Omit<KidEntry, "id" | "startTime" | "sessionId">) => Promise<void>;
+  removeKid: (id: string) => Promise<void>;
   extendTime: (id: string, additionalHours: number) => void;
   login: () => void;
   logout: () => void;
@@ -33,70 +35,90 @@ export interface StoreContextType {
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-// Generate some mock historical data for the charts
-export const MOCK_HISTORICAL_DATA = Array.from({ length: 14 }).map((_, i) => {
-  const hour = i + 8; // 8 AM to 9 PM
-  return {
-    time: `${hour}:00`,
-    kids: Math.floor(Math.random() * 20) + 5,
-  };
-});
+const todayDate = () => new Date().toISOString().split("T")[0];
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [kids, setKids] = useState<KidEntry[]>([
-    // Add a couple of initial mock kids for demonstration
-    {
-      id: "1",
-      kidName: "Leo",
-      hoursOfPlay: 1,
-      parentsCount: 1,
-      startTime: Date.now() - 45 * 60 * 1000, // 45 mins ago
-      childSocks: "C-123",
-      parentSocks: "P-456",
-      customFields: [{ id: "c1", label: "Notes", value: "Allergic to peanuts" }]
-    },
-    {
-      id: "2",
-      kidName: "Mia",
-      hoursOfPlay: 2,
-      parentsCount: 2,
-      startTime: Date.now() - 1 * 60 * 60 * 1000 - 55 * 60 * 1000, // 1h 55m ago (almost 2 hours)
-      childSocks: "C-456",
-      customFields: []
-    },
-    {
-      id: "3",
-      kidName: "Noah",
-      hoursOfPlay: 1,
-      parentsCount: 1,
-      startTime: Date.now() - 65 * 60 * 1000, // 65 mins ago (overtime)
-      childSocks: "C-789",
-      customFields: []
-    }
-  ]);
+  const [kids, setKids] = useState<KidEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Force re-render every minute to update statuses
+  useEffect(() => {
+    async function loadTodaySessions() {
+      try {
+        const res = await fetch(`/api/sessions?date=${todayDate()}`);
+        if (!res.ok) throw new Error("Failed to load sessions");
+        const sessions: any[] = await res.json();
+        const active = sessions.filter(s => !s.outTime);
+        const mapped: KidEntry[] = active.map(s => ({
+          id: String(s.id),
+          sessionId: s.id,
+          kidName: s.kidName,
+          hoursOfPlay: s.hoursOfPlay,
+          parentsCount: s.parentsCount,
+          startTime: new Date(s.inTime).getTime(),
+          childSocks: s.childSocks,
+          parentSocks: s.parentSocks ?? undefined,
+          customFields: Array.isArray(s.customFields) ? s.customFields : [],
+        }));
+        setKids(mapped);
+      } catch (e) {
+        console.error("Failed to load sessions:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadTodaySessions();
+  }, []);
+
   const [, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 60000);
     return () => clearInterval(interval);
   }, []);
 
-  const addKid = (kidData: Omit<KidEntry, "id" | "startTime">) => {
+  const addKid = useCallback(async (kidData: Omit<KidEntry, "id" | "startTime" | "sessionId">) => {
+    const payload = {
+      kidName: kidData.kidName,
+      hoursOfPlay: kidData.hoursOfPlay,
+      parentsCount: kidData.parentsCount,
+      childSocks: kidData.childSocks,
+      parentSocks: kidData.parentSocks,
+      customFields: kidData.customFields,
+      date: todayDate(),
+    };
+    const res = await fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Failed to create session");
+    const session = await res.json();
     const newKid: KidEntry = {
-      ...kidData,
-      id: Math.random().toString(36).substring(7),
-      startTime: Date.now(),
+      id: String(session.id),
+      sessionId: session.id,
+      kidName: session.kidName,
+      hoursOfPlay: session.hoursOfPlay,
+      parentsCount: session.parentsCount,
+      startTime: new Date(session.inTime).getTime(),
+      childSocks: session.childSocks,
+      parentSocks: session.parentSocks ?? undefined,
+      customFields: Array.isArray(session.customFields) ? session.customFields : [],
     };
     setKids((prev) => [newKid, ...prev]);
-  };
+  }, []);
 
-  const removeKid = (id: string) => {
+  const removeKid = useCallback(async (id: string) => {
+    const kid = kids.find(k => k.id === id);
+    if (!kid) return;
+    try {
+      await fetch(`/api/sessions/${kid.sessionId}/end`, { method: "PATCH" });
+    } catch (e) {
+      console.error("Failed to end session:", e);
+    }
     setKids((prev) => prev.filter((k) => k.id !== id));
-  };
+  }, [kids]);
 
-  const extendTime = (id: string, additionalHours: number) => {
+  const extendTime = useCallback((id: string, additionalHours: number) => {
     setKids((prev) =>
       prev.map((kid) =>
         kid.id === id
@@ -104,7 +126,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : kid
       )
     );
-  };
+  }, []);
 
   const login = () => setIsAuthenticated(true);
   const logout = () => setIsAuthenticated(false);
@@ -128,13 +150,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       value={{
         kids,
         isAuthenticated,
+        isLoading,
         addKid,
         removeKid,
         extendTime,
         login,
         logout,
         getKidStatus,
-        getRemainingMinutes
+        getRemainingMinutes,
       }}
     >
       {children}

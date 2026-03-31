@@ -1,16 +1,103 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { insertSessionSchema } from "@shared/schema";
+import { z } from "zod";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  // Create a new session (kid checks in)
+  app.post("/api/sessions", async (req, res) => {
+    try {
+      const parsed = insertSessionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      }
+      const session = await storage.createSession(parsed.data);
+      return res.status(201).json(session);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
 
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+  // End a session (kid checks out)
+  app.patch("/api/sessions/:id/end", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
+
+      const session = await storage.endSession(id, new Date());
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      return res.json(session);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Get sessions for a specific date
+  app.get("/api/sessions", async (req, res) => {
+    try {
+      const date = req.query.date as string | undefined;
+      const sessions = date
+        ? await storage.getSessionsByDate(date)
+        : await storage.getAllSessions();
+      return res.json(sessions);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Export sessions as CSV for a given date
+  app.get("/api/sessions/export", async (req, res) => {
+    try {
+      const date = req.query.date as string | undefined;
+      const sessions = date
+        ? await storage.getSessionsByDate(date)
+        : await storage.getAllSessions();
+
+      const headers = [
+        "ID", "Kid Name", "Date", "In Time", "Out Time",
+        "Hours of Play", "Child Socks", "Parent Socks",
+        "Parents Count", "Custom Fields"
+      ];
+
+      const formatTime = (ts: Date | null) => {
+        if (!ts) return "";
+        return new Date(ts).toLocaleTimeString("en-US", {
+          hour: "2-digit", minute: "2-digit", hour12: true
+        });
+      };
+
+      const rows = sessions.map(s => {
+        const customStr = Array.isArray(s.customFields)
+          ? (s.customFields as any[]).map((cf: any) => `${cf.label}: ${cf.value}`).join(" | ")
+          : "";
+        return [
+          s.id,
+          `"${s.kidName}"`,
+          s.date,
+          formatTime(s.inTime),
+          formatTime(s.outTime),
+          s.hoursOfPlay,
+          `"${s.childSocks}"`,
+          `"${s.parentSocks ?? ""}"`,
+          s.parentsCount,
+          `"${customStr}"`
+        ].join(",");
+      });
+
+      const csv = [headers.join(","), ...rows].join("\n");
+      const filename = date ? `sessions-${date}.csv` : `sessions-all.csv`;
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.send(csv);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
 
   return httpServer;
 }
