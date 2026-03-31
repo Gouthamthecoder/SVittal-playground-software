@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useStore, KidStatus, KidEntry } from "@/lib/store";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Users, Plus, CheckCircle, AlertTriangle, AlertCircle, X, Trash2, Clock4 } from "lucide-react";
+import { Clock, Users, Plus, CheckCircle, AlertTriangle, AlertCircle, X, Trash2, Clock4, Search, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -64,6 +64,18 @@ export default function Dashboard() {
   const [hours, setHours] = useState("1");
   const [parents, setParents] = useState("1");
   const [customFields, setCustomFields] = useState<{ id: string; label: string; value: string }[]>([]);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const filteredKids = useMemo(() => {
+    return kids.filter((kid) => {
+      const matchesSearch = kid.kidName.toLowerCase().includes(searchQuery.toLowerCase());
+      const status = getKidStatus(kid);
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [kids, searchQuery, statusFilter, getKidStatus]);
 
   const handleAddCustomField = () => {
     setCustomFields([...customFields, { id: Math.random().toString(), label: "New Field", value: "" }]);
@@ -205,8 +217,34 @@ export default function Dashboard() {
 
         {/* Dashboard List */}
         <div className="lg:col-span-8 space-y-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
             <h2 className="text-2xl font-extrabold text-foreground">Current Floor Status</h2>
+            
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                <Input 
+                  placeholder="Search name..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-10 w-[180px] bg-white border-2"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="h-10 w-[140px] bg-white border-2">
+                  <div className="flex items-center gap-2">
+                    <Filter size={16} className="text-muted-foreground" />
+                    <SelectValue placeholder="Filter" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="green">Active</SelectItem>
+                  <SelectItem value="yellow">&lt; 10 Mins</SelectItem>
+                  <SelectItem value="red">Exceeded</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {kids.length === 0 ? (
@@ -219,10 +257,20 @@ export default function Dashboard() {
                 <p className="text-muted-foreground">Add an entry using the form to start tracking.</p>
               </CardContent>
             </Card>
+          ) : filteredKids.length === 0 ? (
+            <Card className="border-none shadow-sm bg-white/50 border-dashed border-2 border-border/50">
+              <CardContent className="p-12 flex flex-col items-center justify-center text-center">
+                <div className="bg-secondary p-4 rounded-full mb-4 text-muted-foreground">
+                  <Search size={32} />
+                </div>
+                <h3 className="text-xl font-bold mb-2">No matches found</h3>
+                <p className="text-muted-foreground">Try adjusting your search or filter.</p>
+              </CardContent>
+            </Card>
           ) : (
             <ScrollArea className="h-[calc(100vh-220px)] pr-4 -mr-4">
               <div className="space-y-4 pb-12">
-                {kids.map((kid) => {
+                {filteredKids.map((kid) => {
                   const status = getKidStatus(kid);
                   const remaining = getRemainingMinutes(kid);
                   
