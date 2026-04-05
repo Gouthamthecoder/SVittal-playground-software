@@ -57,12 +57,6 @@ export async function registerRoutes(
         ? await storage.getSessionsByDate(date)
         : await storage.getAllSessions();
 
-      const headers = [
-        "ID", "Kid Name", "Date", "In Time", "Out Time",
-        "Hours of Play", "Child Socks", "Parent Socks",
-        "Parents Count", "Custom Fields"
-      ];
-
       const formatTime = (ts: Date | null) => {
         if (!ts) return "";
         return new Date(ts).toLocaleTimeString("en-US", {
@@ -70,19 +64,44 @@ export async function registerRoutes(
         });
       };
 
+      const formatDuration = (inTime: Date, outTime: Date | null) => {
+        if (!outTime) return "Active";
+        const ms = outTime.getTime() - inTime.getTime();
+        const mins = Math.floor(ms / 60000);
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+      };
+
+      const parentSocksColumns = (s: typeof sessions[0]) => {
+        const socks = s.parentSocks ? s.parentSocks.split(" | ") : [];
+        const p1 = socks[0] ?? "";
+        const p2 = socks[1] ?? "";
+        return { p1, p2 };
+      };
+
+      const headers = [
+        "ID", "Kid Name", "Date", "In Time", "Out Time", "Duration",
+        "Hours Booked", "Child Socks", "Parent 1 Socks", "Parent 2 Socks",
+        "Parents Count", "Custom Fields"
+      ];
+
       const rows = sessions.map(s => {
         const customStr = Array.isArray(s.customFields)
-          ? (s.customFields as any[]).map((cf: any) => `${cf.label}: ${cf.value}`).join(" | ")
+          ? (s.customFields as any[]).map((cf: any) => `${cf.label}: ${cf.value}`).join("; ")
           : "";
+        const { p1, p2 } = parentSocksColumns(s);
         return [
           s.id,
           `"${s.kidName}"`,
           s.date,
           formatTime(s.inTime),
           formatTime(s.outTime),
+          `"${formatDuration(s.inTime, s.outTime)}"`,
           s.hoursOfPlay,
           `"${s.childSocks}"`,
-          `"${s.parentSocks ?? ""}"`,
+          `"${p1}"`,
+          `"${p2}"`,
           s.parentsCount,
           `"${customStr}"`
         ].join(",");

@@ -228,7 +228,13 @@ export default function Metrics() {
                         </td>
                         <td className="px-5 py-4">
                           {s.parentSocks ? (
-                            <span className="font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">{s.parentSocks}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {s.parentSocks.split(" | ").map((sock, si) => (
+                                <span key={si} className="font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">
+                                  {s.parentsCount > 1 ? `P${si + 1}: ` : ""}{sock}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-muted-foreground text-xs">—</span>
                           )}

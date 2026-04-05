@@ -65,8 +65,18 @@ export default function Dashboard() {
   const [hours, setHours] = useState("1");
   const [parents, setParents] = useState("1");
   const [childSocks, setChildSocks] = useState("");
-  const [parentSocks, setParentSocks] = useState("");
+  const [parentSocksInputs, setParentSocksInputs] = useState<string[]>([""]); // one per parent
   const [customFields, setCustomFields] = useState<{ id: string; label: string; value: string }[]>([]);
+
+  const handleParentsChange = (val: string) => {
+    setParents(val);
+    const count = parseInt(val, 10);
+    setParentSocksInputs(Array.from({ length: count }, (_, i) => parentSocksInputs[i] ?? ""));
+  };
+
+  const handleParentSocksChange = (idx: number, val: string) => {
+    setParentSocksInputs(prev => prev.map((v, i) => i === idx ? val : v));
+  };
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -105,12 +115,13 @@ export default function Dashboard() {
 
     setSubmitting(true);
     try {
+      const filledSocks = parentSocksInputs.filter(s => s.trim() !== "");
       await addKid({
         kidName,
         hoursOfPlay: parseFloat(hours),
         parentsCount: parseInt(parents, 10),
         childSocks,
-        parentSocks: parentSocks || undefined,
+        parentSocks: filledSocks.length > 0 ? filledSocks.join(" | ") : undefined,
         customFields: customFields.filter(f => f.label.trim() !== "" && f.value.trim() !== ""),
       });
       toast({ title: "Success!", description: `${kidName} has been added to the floor.` });
@@ -118,7 +129,7 @@ export default function Dashboard() {
       setHours("1");
       setParents("1");
       setChildSocks("");
-      setParentSocks("");
+      setParentSocksInputs([""]);
       setCustomFields([]);
     } catch {
       toast({ title: "Error", description: "Failed to add entry. Please try again.", variant: "destructive" });
@@ -172,7 +183,7 @@ export default function Dashboard() {
                   </div>
                   <div className="space-y-3">
                     <Label htmlFor="parents" className="font-bold text-base text-foreground/80">Parents</Label>
-                    <Select value={parents} onValueChange={setParents}>
+                    <Select value={parents} onValueChange={handleParentsChange}>
                       <SelectTrigger className="h-12 text-lg rounded-xl border-2 bg-secondary/30">
                         <SelectValue placeholder="Parents" />
                       </SelectTrigger>
@@ -185,31 +196,42 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <Label htmlFor="childSocks" className="font-bold text-base text-foreground/80">Child Socks *</Label>
-                    <Input 
-                      id="childSocks" 
-                      value={childSocks} 
-                      onChange={e => setChildSocks(e.target.value)} 
-                      placeholder="e.g. C-123"
-                      className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
-                      data-testid="input-child-socks"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <Label htmlFor="parentSocks" className="font-bold text-base text-foreground/80">Parent Socks</Label>
-                    <Input 
-                      id="parentSocks" 
-                      value={parentSocks} 
-                      onChange={e => setParentSocks(e.target.value)} 
-                      placeholder="Optional"
-                      className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
-                      data-testid="input-parent-socks"
-                    />
-                  </div>
+                <div className="space-y-3">
+                  <Label htmlFor="childSocks" className="font-bold text-base text-foreground/80">Child Socks *</Label>
+                  <Input 
+                    id="childSocks" 
+                    value={childSocks} 
+                    onChange={e => setChildSocks(e.target.value)} 
+                    placeholder="e.g. C-123"
+                    className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
+                    data-testid="input-child-socks"
+                    required
+                  />
                 </div>
+
+                {parentSocksInputs.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="font-bold text-base text-foreground/80">
+                      Parent Socks {parentSocksInputs.length > 1 ? "(one per parent)" : ""}
+                    </Label>
+                    {parentSocksInputs.map((val, idx) => (
+                      <div key={idx} className="relative animate-in slide-in-from-top-1">
+                        <Input
+                          value={val}
+                          onChange={e => handleParentSocksChange(idx, e.target.value)}
+                          placeholder={parentSocksInputs.length > 1 ? `Parent ${idx + 1} socks ID (optional)` : "Optional"}
+                          className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
+                          data-testid={`input-parent-socks-${idx}`}
+                        />
+                        {parentSocksInputs.length > 1 && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                            P{idx + 1}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Custom Fields Section */}
                 <div className="pt-2 border-t border-border/50 space-y-4">
@@ -343,16 +365,16 @@ export default function Dashboard() {
                             </div>
                           </div>
 
-                          {/* Custom Fields (Optional) */}
+                          {/* Socks & Custom Fields */}
                           <div className="flex-1 flex flex-wrap gap-2">
                             <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary">
-                              <span className="opacity-70 mr-1">Child Socks:</span> {kid.childSocks}
+                              <span className="opacity-70 mr-1">Child:</span> {kid.childSocks}
                             </span>
-                            {kid.parentSocks && (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary">
-                                <span className="opacity-70 mr-1">Parent Socks:</span> {kid.parentSocks}
+                            {kid.parentSocks && kid.parentSocks.split(" | ").map((sock, si) => (
+                              <span key={si} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-primary/10 text-primary">
+                                <span className="opacity-70 mr-1">{kid.parentsCount > 1 ? `P${si + 1}:` : "Parent:"}</span> {sock}
                               </span>
-                            )}
+                            ))}
                             {kid.customFields.map((cf, idx) => (
                               <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-secondary text-secondary-foreground">
                                 <span className="opacity-50 mr-1">{cf.label}:</span> {cf.value}
