@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import pg from "pg";
+import crypto from "crypto";
 import { type User, type InsertUser, type Session, type InsertSession, users, sessions } from "@shared/schema";
 
 const { Pool } = pg;
@@ -8,10 +9,26 @@ const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const db = drizzle({ client: pool });
 
+// -- Password hashing using built-in crypto (no extra deps needed) --
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const derived = crypto.scryptSync(password, salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(derived, "hex"));
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  createUser(user: InsertUser & { role?: string }): Promise<User>;
+  listUsers(): Promise<User[]>;
+  deleteUser(id: string): Promise<void>;
 
   createSession(session: InsertSession): Promise<Session>;
   endSession(id: number, outTime: Date): Promise<Session | undefined>;
@@ -30,9 +47,21 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const result = await db.insert(users).values(insertUser).returning();
+  async createUser(insertUser: InsertUser & { role?: string }): Promise<User> {
+    const result = await db.insert(users).values({
+      username: insertUser.username,
+      password: insertUser.password,
+      role: insertUser.role ?? "staff",
+    }).returning();
     return result[0];
+  }
+
+  async listUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
   }
 
   async createSession(insertSession: InsertSession): Promise<Session> {
@@ -61,3 +90,16 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+
+// Seed a default admin user if none exists
+export async function seedDefaultAdmin() {
+  const existing = await storage.getUserByUsername("admin");
+  if (!existing) {
+    await storage.createUser({
+      username: "admin",
+      password: hashPassword("admin123"),
+      role: "admin",
+    });
+    console.log("[auth] Default admin created — username: admin, password: admin123");
+  }
+}

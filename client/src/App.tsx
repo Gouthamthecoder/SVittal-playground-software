@@ -8,20 +8,31 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Metrics from "@/pages/metrics";
 import Login from "@/pages/login";
+import UserManagement from "@/pages/users";
 import Layout from "@/components/layout";
 import { useEffect } from "react";
 
-function ProtectedRoute({ component: Component }: { component: any }) {
-  const { isAuthenticated } = useStore();
+function ProtectedRoute({ component: Component, adminOnly = false }: { component: any; adminOnly?: boolean }) {
+  const { isAuthenticated, isAdmin, authLoading } = useStore();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated) {
       setLocation("/login");
+    } else if (adminOnly && !isAdmin) {
+      setLocation("/");
     }
-  }, [isAuthenticated, setLocation]);
+  }, [isAuthenticated, isAdmin, authLoading, adminOnly, setLocation]);
+
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center text-muted-foreground font-bold text-lg">
+      Loading...
+    </div>
+  );
 
   if (!isAuthenticated) return null;
+  if (adminOnly && !isAdmin) return null;
 
   return (
     <Layout>
@@ -38,7 +49,10 @@ function Router() {
         <ProtectedRoute component={Dashboard} />
       </Route>
       <Route path="/metrics">
-        <ProtectedRoute component={Metrics} />
+        <ProtectedRoute component={Metrics} adminOnly />
+      </Route>
+      <Route path="/users">
+        <ProtectedRoute component={UserManagement} adminOnly />
       </Route>
       <Route component={NotFound} />
     </Switch>

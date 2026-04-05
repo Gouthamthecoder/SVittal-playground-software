@@ -20,15 +20,24 @@ export interface KidEntry {
   customFields: CustomField[];
 }
 
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: "admin" | "staff";
+}
+
 export interface StoreContextType {
   kids: KidEntry[];
+  user: AuthUser | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
+  authLoading: boolean;
   addKid: (kid: Omit<KidEntry, "id" | "startTime" | "sessionId">) => Promise<void>;
   removeKid: (id: string) => Promise<void>;
   extendTime: (id: string, additionalHours: number) => void;
-  login: () => void;
-  logout: () => void;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
   getKidStatus: (kid: KidEntry) => KidStatus;
   getRemainingMinutes: (kid: KidEntry) => number;
 }
@@ -38,18 +47,43 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 const todayDate = () => new Date().toISOString().split("T")[0];
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [kids, setKids] = useState<KidEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // On mount, check if already logged in via session
   useEffect(() => {
+    async function checkSession() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          setUser({ id: data.id, username: data.username, role: data.role });
+        }
+      } catch {
+        // not logged in
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+    checkSession();
+  }, []);
+
+  // Load today's active sessions when authenticated
+  useEffect(() => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
     async function loadTodaySessions() {
+      setIsLoading(true);
       try {
         const res = await fetch(`/api/sessions?date=${todayDate()}`);
         if (!res.ok) throw new Error("Failed to load sessions");
         const sessions: any[] = await res.json();
-        const active = sessions.filter(s => !s.outTime);
-        const mapped: KidEntry[] = active.map(s => ({
+        const active = sessions.filter((s: any) => !s.outTime);
+        const mapped: KidEntry[] = active.map((s: any) => ({
           id: String(s.id),
           sessionId: s.id,
           kidName: s.kidName,
@@ -68,12 +102,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }
     loadTodaySessions();
-  }, []);
+  }, [user]);
 
   const [, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 60000);
     return () => clearInterval(interval);
+  }, []);
+
+  const login = useCallback(async (username: string, password: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || "Login failed");
+    }
+    const data = await res.json();
+    setUser({ id: data.id, username: data.username, role: data.role });
+  }, []);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
+    setKids([]);
   }, []);
 
   const addKid = useCallback(async (kidData: Omit<KidEntry, "id" | "startTime" | "sessionId">) => {
@@ -128,9 +182,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const login = () => setIsAuthenticated(true);
-  const logout = () => setIsAuthenticated(false);
-
   const getRemainingMinutes = (kid: KidEntry) => {
     const playTimeMs = kid.hoursOfPlay * 60 * 60 * 1000;
     const endTime = kid.startTime + playTimeMs;
@@ -149,8 +200,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <StoreContext.Provider
       value={{
         kids,
-        isAuthenticated,
+        user,
+        isAuthenticated: !!user,
+        isAdmin: user?.role === "admin",
         isLoading,
+        authLoading,
         addKid,
         removeKid,
         extendTime,

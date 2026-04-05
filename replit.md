@@ -11,12 +11,23 @@ A full-stack dashboard for managing kids in a play area facility.
 
 ## Features
 
+- **Authentication**: Session-based login (username + password, bcrypt-style via Node crypto scrypt)
+- **Role-based access**: Admin = full access; Staff = Dashboard only
 - **Dashboard**: Real-time floor status for active kids, with search/filter by name or status
 - **New Entry Form**: Add kids with mandatory child socks ID, optional parent socks, hours of play, parents count, and custom fields
 - **Extend Time**: Extend a kid's play session by 30 mins or 1 hour
 - **End Session**: Removes kid from active floor and records out-time in the database
-- **Metrics**: Date-filtered view of all sessions with hourly check-in chart, socks tracking, and session table
-- **CSV Export**: Download all sessions for a selected date as a CSV file
+- **Metrics** (admin only): Date-filtered view of all sessions with hourly check-in chart, socks tracking, and session table
+- **CSV Export** (admin only): Download all sessions for a selected date as a CSV file
+- **User Management** (admin only): Create/delete staff and admin accounts
+
+## Default Credentials
+
+| Username | Password | Role |
+|---|---|---|
+| admin | admin123 | admin |
+
+Change the admin password after first login via the Users page.
 
 ## Database Schema
 
