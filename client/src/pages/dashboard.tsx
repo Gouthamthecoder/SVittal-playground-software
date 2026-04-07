@@ -1,14 +1,15 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useStore, KidStatus, KidEntry } from "@/lib/store";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Users, Plus, CheckCircle, AlertTriangle, AlertCircle, X, Trash2, Clock4, Search, Filter } from "lucide-react";
+import { Clock, Users, Plus, CheckCircle, AlertTriangle, AlertCircle, X, Trash2, Clock4, Search, Filter, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 function StatusSummary({ kids, getKidStatus }: { kids: KidEntry[], getKidStatus: (k: KidEntry) => KidStatus }) {
   const statuses = kids.map(getKidStatus);
@@ -56,10 +57,180 @@ function StatusSummary({ kids, getKidStatus }: { kids: KidEntry[], getKidStatus:
   );
 }
 
+// ── Edit Dialog ──────────────────────────────────────────────────────────────
+function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolean; onClose: () => void }) {
+  const { updateKid } = useStore();
+  const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+
+  const [kidName, setKidName] = useState("");
+  const [hours, setHours] = useState("1");
+  const [parents, setParents] = useState("1");
+  const [childSocks, setChildSocks] = useState("");
+  const [parentSocksInputs, setParentSocksInputs] = useState<string[]>([""]);
+  const [customFields, setCustomFields] = useState<{ id: string; label: string; value: string }[]>([]);
+
+  // Pre-fill whenever the dialog opens for a new kid
+  useEffect(() => {
+    if (!kid) return;
+    setKidName(kid.kidName);
+    setHours(String(kid.hoursOfPlay));
+    setParents(String(kid.parentsCount));
+    setChildSocks(kid.childSocks);
+    const sockParts = kid.parentSocks ? kid.parentSocks.split(" | ") : [];
+    const count = kid.parentsCount;
+    setParentSocksInputs(Array.from({ length: count }, (_, i) => sockParts[i] ?? ""));
+    setCustomFields(kid.customFields.map(cf => ({ ...cf })));
+  }, [kid]);
+
+  const handleParentsChange = (val: string) => {
+    setParents(val);
+    const count = parseInt(val, 10);
+    setParentSocksInputs(prev => Array.from({ length: count }, (_, i) => prev[i] ?? ""));
+  };
+
+  const handleSave = async () => {
+    if (!kid) return;
+    if (!kidName.trim()) {
+      toast({ title: "Name required", variant: "destructive" });
+      return;
+    }
+    if (!childSocks.trim()) {
+      toast({ title: "Child socks required", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const filledSocks = parentSocksInputs.filter(s => s.trim() !== "");
+      await updateKid(kid.id, {
+        kidName: kidName.trim(),
+        hoursOfPlay: parseFloat(hours),
+        parentsCount: parseInt(parents, 10),
+        childSocks: childSocks.trim(),
+        parentSocks: filledSocks.length > 0 ? filledSocks.join(" | ") : null,
+        customFields: customFields.filter(f => f.label.trim() && f.value.trim()),
+      });
+      toast({ title: "Updated", description: `${kidName}'s details have been saved.` });
+      onClose();
+    } catch {
+      toast({ title: "Error", description: "Could not save changes.", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg rounded-2xl p-0 overflow-hidden" data-testid="dialog-edit">
+        <DialogHeader className="bg-primary px-6 py-4">
+          <DialogTitle className="text-primary-foreground text-xl font-extrabold flex items-center gap-2">
+            <Pencil size={20} /> Edit Entry
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+          {/* Kid Name */}
+          <div className="space-y-2">
+            <Label className="font-bold">Kid's Name</Label>
+            <Input value={kidName} onChange={e => setKidName(e.target.value)} className="h-11 rounded-xl border-2" data-testid="edit-input-kid-name" />
+          </div>
+
+          {/* Hours + Parents */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="font-bold">Hours of Play</Label>
+              <Select value={hours} onValueChange={setHours}>
+                <SelectTrigger className="h-11 rounded-xl border-2" data-testid="edit-select-hours">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0.5">30 Mins</SelectItem>
+                  <SelectItem value="1">1 Hour</SelectItem>
+                  <SelectItem value="1.5">1.5 Hours</SelectItem>
+                  <SelectItem value="2">2 Hours</SelectItem>
+                  <SelectItem value="3">3 Hours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="font-bold">Parents</Label>
+              <Select value={parents} onValueChange={handleParentsChange}>
+                <SelectTrigger className="h-11 rounded-xl border-2" data-testid="edit-select-parents">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">0</SelectItem>
+                  <SelectItem value="1">1</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Child Socks */}
+          <div className="space-y-2">
+            <Label className="font-bold">Child Socks *</Label>
+            <Input value={childSocks} onChange={e => setChildSocks(e.target.value)} className="h-11 rounded-xl border-2" data-testid="edit-input-child-socks" />
+          </div>
+
+          {/* Parent Socks */}
+          {parentSocksInputs.length > 0 && (
+            <div className="space-y-2">
+              <Label className="font-bold">Parent Socks {parentSocksInputs.length > 1 ? "(one per parent)" : ""}</Label>
+              {parentSocksInputs.map((val, idx) => (
+                <div key={idx} className="relative">
+                  <Input
+                    value={val}
+                    onChange={e => setParentSocksInputs(prev => prev.map((v, i) => i === idx ? e.target.value : v))}
+                    placeholder={parentSocksInputs.length > 1 ? `Parent ${idx + 1} socks (optional)` : "Optional"}
+                    className="h-11 rounded-xl border-2"
+                    data-testid={`edit-input-parent-socks-${idx}`}
+                  />
+                  {parentSocksInputs.length > 1 && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">P{idx + 1}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Custom Fields */}
+          <div className="space-y-3 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between">
+              <Label className="font-bold text-sm text-muted-foreground uppercase tracking-wider">Custom Info</Label>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setCustomFields(p => [...p, { id: Math.random().toString(), label: "", value: "" }])} className="h-8 text-primary font-bold hover:bg-primary/10">
+                <Plus size={14} className="mr-1" /> Add
+              </Button>
+            </div>
+            {customFields.map((cf) => (
+              <div key={cf.id} className="flex gap-2 items-center">
+                <Input value={cf.label} onChange={e => setCustomFields(p => p.map(f => f.id === cf.id ? { ...f, label: e.target.value } : f))} placeholder="Label" className="h-10 rounded-lg border-2 text-sm" />
+                <Input value={cf.value} onChange={e => setCustomFields(p => p.map(f => f.id === cf.id ? { ...f, value: e.target.value } : f))} placeholder="Value" className="h-10 rounded-lg border-2 text-sm" />
+                <Button type="button" variant="ghost" size="icon" onClick={() => setCustomFields(p => p.filter(f => f.id !== cf.id))} className="text-destructive hover:bg-destructive/10 shrink-0 h-10 w-10">
+                  <X size={16} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t border-border/50 gap-2">
+          <Button variant="outline" onClick={onClose} className="rounded-xl flex-1" disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} className="rounded-xl flex-1 font-bold" disabled={saving} data-testid="button-save-edit">
+            {saving ? "Saving..." : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { kids, addKid, removeKid, extendTime, getKidStatus, getRemainingMinutes, isLoading } = useStore();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
+  const [editingKid, setEditingKid] = useState<KidEntry | null>(null);
 
   const [kidName, setKidName] = useState("");
   const [hours, setHours] = useState("1");
@@ -407,17 +578,25 @@ export default function Dashboard() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48 rounded-xl p-2">
-                                <div className="px-2 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Extend Time</div>
+                                <DropdownMenuItem
+                                  onClick={() => setEditingKid(kid)}
+                                  className="rounded-lg cursor-pointer font-medium py-2 gap-2"
+                                  data-testid={`button-edit-${kid.id}`}
+                                >
+                                  <Pencil size={15} /> Edit Details
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator className="my-1" />
+                                <div className="px-2 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider">Extend Time</div>
                                 <DropdownMenuItem onClick={() => extendTime(kid.id, 0.5)} className="rounded-lg cursor-pointer font-medium py-2">
                                   + 30 Minutes
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => extendTime(kid.id, 1)} className="rounded-lg cursor-pointer font-medium py-2">
                                   + 1 Hour
                                 </DropdownMenuItem>
-                                <div className="h-px bg-border/50 my-1 -mx-1" />
+                                <DropdownMenuSeparator className="my-1" />
                                 <DropdownMenuItem 
                                   onClick={() => removeKid(kid.id)} 
-                                  className="rounded-lg cursor-pointer font-medium py-2 text-destructive focus:text-destructive focus:bg-destructive/10 mt-1"
+                                  className="rounded-lg cursor-pointer font-medium py-2 text-destructive focus:text-destructive focus:bg-destructive/10"
                                 >
                                   <Trash2 size={16} className="mr-2" /> End Session
                                 </DropdownMenuItem>
@@ -434,6 +613,12 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      <EditDialog
+        kid={editingKid}
+        open={editingKid !== null}
+        onClose={() => setEditingKid(null)}
+      />
     </div>
   );
 }

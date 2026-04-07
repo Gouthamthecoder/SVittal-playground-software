@@ -26,6 +26,15 @@ export interface AuthUser {
   role: "admin" | "staff";
 }
 
+export interface KidUpdate {
+  kidName?: string;
+  hoursOfPlay?: number;
+  parentsCount?: number;
+  childSocks?: string;
+  parentSocks?: string | null;
+  customFields?: CustomField[];
+}
+
 export interface StoreContextType {
   kids: KidEntry[];
   user: AuthUser | null;
@@ -34,6 +43,7 @@ export interface StoreContextType {
   isLoading: boolean;
   authLoading: boolean;
   addKid: (kid: Omit<KidEntry, "id" | "startTime" | "sessionId">) => Promise<void>;
+  updateKid: (id: string, updates: KidUpdate) => Promise<void>;
   removeKid: (id: string) => Promise<void>;
   extendTime: (id: string, additionalHours: number) => void;
   login: (username: string, password: string) => Promise<void>;
@@ -161,6 +171,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setKids((prev) => [newKid, ...prev]);
   }, []);
 
+  const updateKid = useCallback(async (id: string, updates: KidUpdate) => {
+    const kid = kids.find(k => k.id === id);
+    if (!kid) return;
+    const res = await fetch(`/api/sessions/${kid.sessionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) throw new Error("Failed to update session");
+    const session = await res.json();
+    setKids(prev => prev.map(k => k.id === id ? {
+      ...k,
+      kidName: session.kidName,
+      hoursOfPlay: session.hoursOfPlay,
+      parentsCount: session.parentsCount,
+      childSocks: session.childSocks,
+      parentSocks: session.parentSocks ?? undefined,
+      customFields: Array.isArray(session.customFields) ? session.customFields : [],
+    } : k));
+  }, [kids]);
+
   const removeKid = useCallback(async (id: string) => {
     const kid = kids.find(k => k.id === id);
     if (!kid) return;
@@ -206,6 +237,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         isLoading,
         authLoading,
         addKid,
+        updateKid,
         removeKid,
         extendTime,
         login,

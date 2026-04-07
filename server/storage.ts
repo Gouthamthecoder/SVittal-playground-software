@@ -23,6 +23,15 @@ export function verifyPassword(password: string, stored: string): boolean {
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(derived, "hex"));
 }
 
+export interface SessionUpdate {
+  kidName?: string;
+  hoursOfPlay?: number;
+  parentsCount?: number;
+  childSocks?: string;
+  parentSocks?: string | null;
+  customFields?: any[];
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -31,6 +40,7 @@ export interface IStorage {
   deleteUser(id: string): Promise<void>;
 
   createSession(session: InsertSession): Promise<Session>;
+  updateSession(id: number, updates: SessionUpdate): Promise<Session | undefined>;
   endSession(id: number, outTime: Date): Promise<Session | undefined>;
   getSessionsByDate(date: string): Promise<Session[]>;
   getAllSessions(): Promise<Session[]>;
@@ -69,6 +79,14 @@ export class DatabaseStorage implements IStorage {
       ...insertSession,
       inTime: new Date(),
     }).returning();
+    return result[0];
+  }
+
+  async updateSession(id: number, updates: SessionUpdate): Promise<Session | undefined> {
+    const result = await db.update(sessions)
+      .set(updates)
+      .where(eq(sessions.id, id))
+      .returning();
     return result[0];
   }
 

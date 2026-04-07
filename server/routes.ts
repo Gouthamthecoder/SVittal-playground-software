@@ -4,6 +4,15 @@ import { storage, hashPassword, verifyPassword } from "./storage";
 import { insertSessionSchema } from "@shared/schema";
 import { z } from "zod";
 
+const updateSessionSchema = z.object({
+  kidName: z.string().min(1).optional(),
+  hoursOfPlay: z.number().positive().optional(),
+  parentsCount: z.number().min(0).optional(),
+  childSocks: z.string().min(1).optional(),
+  parentSocks: z.string().nullable().optional(),
+  customFields: z.array(z.object({ id: z.string(), label: z.string(), value: z.string() })).optional(),
+});
+
 // ── Auth middleware ──────────────────────────────────────────────────────────
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
@@ -134,6 +143,23 @@ export async function registerRoutes(
       }
       const session = await storage.createSession(parsed.data);
       return res.status(201).json(session);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Update session details — any authenticated user
+  app.patch("/api/sessions/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
+      const parsed = updateSessionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      }
+      const session = await storage.updateSession(id, parsed.data);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      return res.json(session);
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
     }
