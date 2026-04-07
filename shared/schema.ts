@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, real, timestamp, jsonb, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, real, timestamp, jsonb, serial, integer, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -18,6 +18,28 @@ export const insertUserSchema = createInsertSchema(users).pick({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
+// ── Shops ────────────────────────────────────────────────────────────────────
+export const shops = pgTable("shops", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  code: varchar("code", { length: 20 }),
+});
+
+export type Shop = typeof shops.$inferSelect;
+export type InsertShop = typeof shops.$inferInsert;
+
+// ── User ↔ Shop assignments (staff role per shop) ────────────────────────────
+export const userShops = pgTable("user_shops", {
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 20 }).notNull().default("staff"),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.shopId] }),
+}));
+
+export type UserShop = typeof userShops.$inferSelect;
+
+// ── Play sessions ────────────────────────────────────────────────────────────
 export const customFieldSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -26,6 +48,7 @@ export const customFieldSchema = z.object({
 
 export const sessions = pgTable("sessions", {
   id: serial("id").primaryKey(),
+  shopId: integer("shop_id"),
   kidName: text("kid_name").notNull(),
   childSocks: text("child_socks").notNull(),
   parentSocks: text("parent_socks"),
@@ -41,6 +64,7 @@ export const insertSessionSchema = createInsertSchema(sessions).omit({
   id: true,
   inTime: true,
   outTime: true,
+  shopId: true,
 }).extend({
   customFields: z.array(customFieldSchema).optional().default([]),
 });

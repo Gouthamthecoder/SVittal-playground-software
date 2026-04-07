@@ -4,7 +4,7 @@ import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { seedDefaultAdmin } from "./storage";
+import { seedDefaultAdmin, seedDefaultShop } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,6 +20,8 @@ declare module "express-session" {
     userId: string;
     userRole: string;
     username: string;
+    shopId: number;
+    shopName: string;
   }
 }
 
@@ -83,6 +85,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await seedDefaultAdmin();
+  await seedDefaultShop();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
