@@ -4,3 +4,15 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment / secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Replit internals
+.config/
+.cache/
+
+# Drizzle generated migrations output
+drizzle/
