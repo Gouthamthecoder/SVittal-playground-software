@@ -221,7 +221,14 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
           {/* Child Socks */}
           <div className="space-y-2">
             <Label className="font-bold">Child Socks *</Label>
-            <Input value={childSocks} onChange={e => setChildSocks(e.target.value)} className="h-11 rounded-xl border-2" data-testid="edit-input-child-socks" />
+            <Select value={childSocks} onValueChange={setChildSocks}>
+              <SelectTrigger className="h-11 rounded-xl border-2" data-testid="edit-input-child-socks">
+                <SelectValue placeholder="Select size..." />
+              </SelectTrigger>
+              <SelectContent>
+                {["XXS", "XS", "S", "M"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Parent Socks */}
@@ -229,17 +236,19 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
             <div className="space-y-2">
               <Label className="font-bold">Parent Socks {parentSocksInputs.length > 1 ? "(one per parent)" : ""}</Label>
               {parentSocksInputs.map((val, idx) => (
-                <div key={idx} className="relative">
-                  <Input
-                    value={val}
-                    onChange={e => setParentSocksInputs(prev => prev.map((v, i) => i === idx ? e.target.value : v))}
-                    placeholder={parentSocksInputs.length > 1 ? `Parent ${idx + 1} socks (optional)` : "Optional"}
-                    className="h-11 rounded-xl border-2"
-                    data-testid={`edit-input-parent-socks-${idx}`}
-                  />
+                <div key={idx} className="relative flex items-center gap-2">
                   {parentSocksInputs.length > 1 && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">P{idx + 1}</span>
+                    <span className="text-xs font-bold text-muted-foreground bg-secondary px-2 py-1 rounded-full whitespace-nowrap">P{idx + 1}</span>
                   )}
+                  <Select value={val} onValueChange={v => setParentSocksInputs(prev => prev.map((x, i) => i === idx ? v : x))}>
+                    <SelectTrigger className="h-11 rounded-xl border-2 flex-1" data-testid={`edit-input-parent-socks-${idx}`}>
+                      <SelectValue placeholder="Select size (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">— None —</SelectItem>
+                      {["S", "M", "L", "XL", "XXL"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               ))}
             </div>
@@ -435,15 +444,18 @@ export default function Dashboard() {
 
                 <div className="space-y-3">
                   <Label htmlFor="childSocks" className="font-bold text-base text-foreground/80">Child Socks *</Label>
-                  <Input 
-                    id="childSocks" 
-                    value={childSocks} 
-                    onChange={e => setChildSocks(e.target.value)} 
-                    placeholder="e.g. C-123"
-                    className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
-                    data-testid="input-child-socks"
-                    required
-                  />
+                  <Select value={childSocks} onValueChange={setChildSocks}>
+                    <SelectTrigger
+                      id="childSocks"
+                      className="h-12 text-lg rounded-xl border-2 bg-secondary/30"
+                      data-testid="input-child-socks"
+                    >
+                      <SelectValue placeholder="Select size..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["XXS", "XS", "S", "M"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {parentSocksInputs.length > 0 && (
@@ -452,19 +464,24 @@ export default function Dashboard() {
                       Parent Socks {parentSocksInputs.length > 1 ? "(one per parent)" : ""}
                     </Label>
                     {parentSocksInputs.map((val, idx) => (
-                      <div key={idx} className="relative animate-in slide-in-from-top-1">
-                        <Input
-                          value={val}
-                          onChange={e => handleParentSocksChange(idx, e.target.value)}
-                          placeholder={parentSocksInputs.length > 1 ? `Parent ${idx + 1} socks ID (optional)` : "Optional"}
-                          className="h-12 text-lg rounded-xl border-2 bg-secondary/30 focus-visible:bg-white"
-                          data-testid={`input-parent-socks-${idx}`}
-                        />
+                      <div key={idx} className="flex items-center gap-2 animate-in slide-in-from-top-1">
                         {parentSocksInputs.length > 1 && (
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-bold text-muted-foreground bg-secondary px-2 py-1 rounded-full whitespace-nowrap">
                             P{idx + 1}
                           </span>
                         )}
+                        <Select value={val} onValueChange={v => handleParentSocksChange(idx, v)}>
+                          <SelectTrigger
+                            className="h-12 text-lg rounded-xl border-2 bg-secondary/30 flex-1"
+                            data-testid={`input-parent-socks-${idx}`}
+                          >
+                            <SelectValue placeholder="Select size (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">— None —</SelectItem>
+                            {["S", "M", "L", "XL", "XXL"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
                     ))}
                   </div>
