@@ -151,7 +151,7 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
     setConfirmOpen(false);
     setSaving(true);
     try {
-      const filledSocks = parentSocksInputs.filter(s => s.trim() !== "");
+      const filledSocks = parentSocksInputs.filter(s => s.trim() !== "" && s !== "__none__");
       await updateKid(kid.id, {
         kidName: kidName.trim(),
         hoursOfPlay: parseFloat(hours),
@@ -245,7 +245,7 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
                       <SelectValue placeholder="Select size (optional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">— None —</SelectItem>
+                      <SelectItem value="__none__">— None —</SelectItem>
                       {["S", "M", "L", "XL", "XXL"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -361,7 +361,7 @@ export default function Dashboard() {
 
     setSubmitting(true);
     try {
-      const filledSocks = parentSocksInputs.filter(s => s.trim() !== "");
+      const filledSocks = parentSocksInputs.filter(s => s.trim() !== "" && s !== "__none__");
       await addKid({
         kidName,
         hoursOfPlay: parseFloat(hours),
@@ -478,7 +478,7 @@ export default function Dashboard() {
                             <SelectValue placeholder="Select size (optional)" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">— None —</SelectItem>
+                            <SelectItem value="__none__">— None —</SelectItem>
                             {["S", "M", "L", "XL", "XXL"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                           </SelectContent>
                         </Select>
