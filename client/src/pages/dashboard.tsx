@@ -10,6 +10,47 @@ import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+
+// ── Reusable Confirm Dialog ───────────────────────────────────────────────────
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel = "Confirm",
+  confirmVariant = "default",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  confirmVariant?: "default" | "destructive";
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={v => !v && onCancel()}>
+      <AlertDialogContent className="rounded-2xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-xl font-extrabold">{title}</AlertDialogTitle>
+          <AlertDialogDescription className="text-base">{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel className="rounded-xl font-bold" onClick={onCancel} data-testid="confirm-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className={`rounded-xl font-bold ${confirmVariant === "destructive" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}`}
+            onClick={onConfirm}
+            data-testid="confirm-ok"
+          >
+            {confirmLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 function StatusSummary({ kids, getKidStatus }: { kids: KidEntry[], getKidStatus: (k: KidEntry) => KidStatus }) {
   const statuses = kids.map(getKidStatus);
@@ -62,6 +103,7 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
   const { updateKid } = useStore();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const [kidName, setKidName] = useState("");
   const [hours, setHours] = useState("1");
@@ -89,7 +131,8 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
     setParentSocksInputs(prev => Array.from({ length: count }, (_, i) => prev[i] ?? ""));
   };
 
-  const handleSave = async () => {
+  // Step 1: Validate, then open confirm dialog
+  const handleSave = () => {
     if (!kid) return;
     if (!kidName.trim()) {
       toast({ title: "Name required", variant: "destructive" });
@@ -99,6 +142,13 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
       toast({ title: "Child socks required", variant: "destructive" });
       return;
     }
+    setConfirmOpen(true);
+  };
+
+  // Step 2: Actually save after confirmation
+  const doSave = async () => {
+    if (!kid) return;
+    setConfirmOpen(false);
     setSaving(true);
     try {
       const filledSocks = parentSocksInputs.filter(s => s.trim() !== "");
@@ -120,6 +170,7 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-lg rounded-2xl p-0 overflow-hidden" data-testid="dialog-edit">
         <DialogHeader className="bg-primary px-6 py-4">
@@ -222,6 +273,16 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <ConfirmDialog
+      open={confirmOpen}
+      title="Save Changes?"
+      description={`Are you sure you want to update the details for ${kidName}? This will overwrite the current session information.`}
+      confirmLabel="Yes, Save"
+      onConfirm={doSave}
+      onCancel={() => setConfirmOpen(false)}
+    />
+    </>
   );
 }
 
@@ -231,6 +292,11 @@ export default function Dashboard() {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [editingKid, setEditingKid] = useState<KidEntry | null>(null);
+
+  type PendingAction =
+    | { type: "end"; kid: KidEntry }
+    | { type: "extend"; kid: KidEntry; hours: number };
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const [kidName, setKidName] = useState("");
   const [hours, setHours] = useState("1");
@@ -587,16 +653,17 @@ export default function Dashboard() {
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator className="my-1" />
                                 <div className="px-2 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider">Extend Time</div>
-                                <DropdownMenuItem onClick={() => extendTime(kid.id, 0.5)} className="rounded-lg cursor-pointer font-medium py-2">
+                                <DropdownMenuItem onClick={() => setPendingAction({ type: "extend", kid, hours: 0.5 })} className="rounded-lg cursor-pointer font-medium py-2">
                                   + 30 Minutes
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => extendTime(kid.id, 1)} className="rounded-lg cursor-pointer font-medium py-2">
+                                <DropdownMenuItem onClick={() => setPendingAction({ type: "extend", kid, hours: 1 })} className="rounded-lg cursor-pointer font-medium py-2">
                                   + 1 Hour
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator className="my-1" />
-                                <DropdownMenuItem 
-                                  onClick={() => removeKid(kid.id)} 
+                                <DropdownMenuItem
+                                  onClick={() => setPendingAction({ type: "end", kid })}
                                   className="rounded-lg cursor-pointer font-medium py-2 text-destructive focus:text-destructive focus:bg-destructive/10"
+                                  data-testid={`button-end-${kid.id}`}
                                 >
                                   <Trash2 size={16} className="mr-2" /> End Session
                                 </DropdownMenuItem>
@@ -619,6 +686,33 @@ export default function Dashboard() {
         open={editingKid !== null}
         onClose={() => setEditingKid(null)}
       />
+
+      {pendingAction && (
+        <ConfirmDialog
+          open
+          title={
+            pendingAction.type === "end"
+              ? "End Session?"
+              : `Extend Time by ${pendingAction.hours === 0.5 ? "30 minutes" : "1 hour"}?`
+          }
+          description={
+            pendingAction.type === "end"
+              ? `This will check out ${pendingAction.kid.kidName} and record their end time. This cannot be undone.`
+              : `Add ${pendingAction.hours === 0.5 ? "30 minutes" : "1 hour"} of extra play time for ${pendingAction.kid.kidName}?`
+          }
+          confirmLabel={pendingAction.type === "end" ? "End Session" : "Yes, Extend"}
+          confirmVariant={pendingAction.type === "end" ? "destructive" : "default"}
+          onConfirm={() => {
+            if (pendingAction.type === "end") {
+              removeKid(pendingAction.kid.id);
+            } else {
+              extendTime(pendingAction.kid.id, pendingAction.hours);
+            }
+            setPendingAction(null);
+          }}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
     </div>
   );
 }
