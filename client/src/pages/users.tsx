@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useStore } from "@/lib/store";
-import { UserCog, Trash2, Plus, ShieldCheck, User, Store, X } from "lucide-react";
+import { UserCog, Trash2, Plus, ShieldCheck, User, Store, X, Upload, Download } from "lucide-react";
 
 interface ManagedUser {
   id: string;
@@ -26,6 +26,14 @@ interface ShopUser {
   username: string;
   role: string;
   shopRole: string;
+}
+
+interface InventoryRow {
+  category: "child" | "parent";
+  size: string;
+  initialQuantity: number;
+  usedQuantity: number;
+  availableQuantity: number;
 }
 
 // ── Users Tab ────────────────────────────────────────────────────────────────
@@ -193,8 +201,9 @@ function ShopsTab() {
   const [shops, setShops] = useState<ManagedShop[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [shopUsers, setShopUsers] = useState<Record<number, ShopUser[]>>({});
+  const [shopInventory, setShopInventory] = useState<Record<number, InventoryRow[]>>({});
+  const [inventoryFiles, setInventoryFiles] = useState<Record<number, File | null>>({});
   const [loading, setLoading] = useState(false);
-  const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
   const [expandedShopId, setExpandedShopId] = useState<number | null>(null);
 
   // Create shop form
@@ -206,6 +215,7 @@ function ShopsTab() {
   const [assignUserId, setAssignUserId] = useState("");
   const [assignRole, setAssignRole] = useState<"staff" | "admin">("staff");
   const [assigning, setAssigning] = useState(false);
+  const [importingInventory, setImportingInventory] = useState<number | null>(null);
 
   const fetchShops = async () => {
     setLoading(true);
@@ -233,6 +243,16 @@ function ShopsTab() {
       if (res.ok) {
         const data = await res.json();
         setShopUsers(prev => ({ ...prev, [shopId]: data }));
+      }
+    } catch {}
+  };
+
+  const fetchShopInventory = async (shopId: number) => {
+    try {
+      const res = await fetch(`/api/shops/${shopId}/socks-inventory`);
+      if (res.ok) {
+        const data = await res.json();
+        setShopInventory(prev => ({ ...prev, [shopId]: data }));
       }
     } catch {}
   };
@@ -317,7 +337,53 @@ function ShopsTab() {
     } else {
       setExpandedShopId(shopId);
       fetchShopUsers(shopId);
+      fetchShopInventory(shopId);
     }
+  };
+
+  const handleInventoryFileChange = (shopId: number, file: File | null) => {
+    setInventoryFiles(prev => ({ ...prev, [shopId]: file }));
+  };
+
+  const handleImportInventory = async (shopId: number) => {
+    const file = inventoryFiles[shopId];
+    if (!file) {
+      toast({ title: "File required", description: "Choose a CSV file before importing.", variant: "destructive" });
+      return;
+    }
+
+    setImportingInventory(shopId);
+    try {
+      const csvText = await file.text();
+      const res = await fetch(`/api/shops/${shopId}/socks-inventory/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csvText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to import inventory");
+
+      setShopInventory(prev => ({ ...prev, [shopId]: data.items }));
+      setInventoryFiles(prev => ({ ...prev, [shopId]: null }));
+      toast({
+        title: "Inventory updated",
+        description: "The shop inventory file was imported successfully.",
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setImportingInventory(null);
+    }
+  };
+
+  const handleExportInventory = (shopId: number) => {
+    const a = document.createElement("a");
+    a.href = `/api/shops/${shopId}/socks-inventory/export`;
+    a.download = `shop-${shopId}-socks-inventory.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast({ title: "Download started", description: "Exporting current socks availability." });
   };
 
   const assignedUserIds = expandedShopId ? (shopUsers[expandedShopId] || []).map(u => u.id) : [];
@@ -416,6 +482,86 @@ function ShopsTab() {
                             </button>
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Socks Inventory</p>
+                        <p className="text-sm text-muted-foreground">
+                          Import a CSV with `category,size,quantity`. Current availability is calculated as imported stock minus all socks already used in sessions for this shop.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-xl font-bold"
+                        onClick={() => handleExportInventory(shop.id)}
+                        data-testid={`button-export-inventory-${shop.id}`}
+                      >
+                        <Download size={16} className="mr-2" /> Export Availability
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs font-bold text-muted-foreground">Inventory CSV</Label>
+                        <Input
+                          type="file"
+                          accept=".csv,text/csv"
+                          className="rounded-xl border-2 bg-background file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:font-bold file:text-primary"
+                          onChange={(e) => handleInventoryFileChange(shop.id, e.target.files?.[0] ?? null)}
+                          data-testid={`input-inventory-file-${shop.id}`}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        className="rounded-xl font-bold"
+                        onClick={() => handleImportInventory(shop.id)}
+                        disabled={importingInventory === shop.id}
+                        data-testid={`button-import-inventory-${shop.id}`}
+                      >
+                        <Upload size={16} className="mr-2" />
+                        {importingInventory === shop.id ? "Importing..." : "Import Inventory"}
+                      </Button>
+                    </div>
+
+                    {(shopInventory[shop.id] || []).length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border bg-background/60 px-4 py-6 text-sm text-muted-foreground">
+                        No inventory imported yet for this shop.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-border/60">
+                        <table className="w-full text-sm">
+                          <thead className="bg-secondary/40">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-bold uppercase tracking-wider text-muted-foreground">Category</th>
+                              <th className="px-4 py-3 text-left font-bold uppercase tracking-wider text-muted-foreground">Size</th>
+                              <th className="px-4 py-3 text-left font-bold uppercase tracking-wider text-muted-foreground">Imported</th>
+                              <th className="px-4 py-3 text-left font-bold uppercase tracking-wider text-muted-foreground">Used</th>
+                              <th className="px-4 py-3 text-left font-bold uppercase tracking-wider text-muted-foreground">Available</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(shopInventory[shop.id] || []).map((item) => (
+                              <tr
+                                key={`${item.category}-${item.size}`}
+                                className="border-t border-border/50 bg-white"
+                                data-testid={`row-inventory-${shop.id}-${item.category}-${item.size}`}
+                              >
+                                <td className="px-4 py-3 font-bold capitalize text-foreground">{item.category}</td>
+                                <td className="px-4 py-3 text-foreground">{item.size}</td>
+                                <td className="px-4 py-3 text-foreground">{item.initialQuantity}</td>
+                                <td className="px-4 py-3 text-foreground">{item.usedQuantity}</td>
+                                <td className={`px-4 py-3 font-extrabold ${item.availableQuantity < 0 ? "text-destructive" : "text-primary"}`}>
+                                  {item.availableQuantity}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>

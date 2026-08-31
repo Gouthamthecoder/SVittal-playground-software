@@ -21,13 +21,11 @@ A full-stack dashboard for managing kids in a play area facility.
 - **CSV Export** (admin only): Download all sessions for a selected date as a CSV file
 - **User Management** (admin only): Create/delete staff and admin accounts
 
-## Default Credentials
+## First Admin Account
 
-| Username | Password | Role |
-|---|---|---|
-| admin | admin123 | admin |
-
-Change the admin password after first login via the Users page.
+Create the first administrator deliberately with `SEED_DEFAULT_DATA=true`,
+`DEFAULT_ADMIN_USERNAME`, and a strong `DEFAULT_ADMIN_PASSWORD`. Do not use
+default credentials in deployed environments.
 
 ## Database Schema
 

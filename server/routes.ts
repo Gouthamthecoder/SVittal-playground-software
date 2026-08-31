@@ -13,6 +13,202 @@ const updateSessionSchema = z.object({
   customFields: z.array(z.object({ id: z.string(), label: z.string(), value: z.string() })).optional(),
 });
 
+function getRouteParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+type SockCategory = "child" | "parent";
+
+interface InventoryUsageSummary {
+  category: SockCategory;
+  size: string;
+  initialQuantity: number;
+  usedQuantity: number;
+  availableQuantity: number;
+}
+
+function normalizeSockSize(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim().toUpperCase();
+  return normalized ? normalized : undefined;
+}
+
+function normalizeInventoryCategory(value: string | null | undefined): SockCategory | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["child", "kid", "kids", "children"].includes(normalized)) return "child";
+  if (["parent", "adult", "adults"].includes(normalized)) return "parent";
+  return undefined;
+}
+
+function splitParentSocks(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(" | ")
+    .map((item) => normalizeSockSize(item))
+    .filter((item): item is string => Boolean(item));
+}
+
+function buildUsageMap(
+  childSocks?: string | null,
+  parentSocks?: string | null,
+): Map<string, number> {
+  const usage = new Map<string, number>();
+
+  const add = (category: SockCategory, size: string | undefined) => {
+    if (!size) return;
+    const key = `${category}:${size}`;
+    usage.set(key, (usage.get(key) ?? 0) + 1);
+  };
+
+  add("child", normalizeSockSize(childSocks));
+  for (const sock of splitParentSocks(parentSocks)) {
+    add("parent", sock);
+  }
+
+  return usage;
+}
+
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
+function parseInventoryCsv(csvText: string) {
+  const lines = csvText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    throw new Error("Inventory CSV must include a header row and at least one data row");
+  }
+
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim().toLowerCase());
+  const categoryIndex = headers.findIndex((header) => ["category", "type"].includes(header));
+  const sizeIndex = headers.findIndex((header) => header === "size");
+  const quantityIndex = headers.findIndex((header) => ["quantity", "count", "stock"].includes(header));
+
+  if (categoryIndex === -1 || sizeIndex === -1 || quantityIndex === -1) {
+    throw new Error("Inventory CSV must contain category/type, size, and quantity columns");
+  }
+
+  const merged = new Map<string, { category: SockCategory; size: string; quantity: number }>();
+
+  for (let lineIndex = 1; lineIndex < lines.length; lineIndex += 1) {
+    const values = parseCsvLine(lines[lineIndex]);
+    const category = normalizeInventoryCategory(values[categoryIndex]);
+    const size = normalizeSockSize(values[sizeIndex]);
+    const quantity = Number.parseInt((values[quantityIndex] ?? "").trim(), 10);
+
+    if (!category || !size || Number.isNaN(quantity) || quantity < 0) {
+      throw new Error(`Invalid inventory row at line ${lineIndex + 1}`);
+    }
+
+    const key = `${category}:${size}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+    } else {
+      merged.set(key, { category, size, quantity });
+    }
+  }
+
+  return Array.from(merged.values());
+}
+
+async function getInventoryAvailability(shopId: number, excludeSessionId?: number): Promise<InventoryUsageSummary[]> {
+  const [inventory, sessions] = await Promise.all([
+    storage.listSocksInventory(shopId),
+    storage.getAllSessions(shopId),
+  ]);
+
+  const initialMap = new Map<string, number>();
+  for (const item of inventory) {
+    const key = `${item.category}:${item.size}`;
+    initialMap.set(key, (initialMap.get(key) ?? 0) + item.quantity);
+  }
+
+  const usedMap = new Map<string, number>();
+  for (const session of sessions) {
+    if (excludeSessionId && session.id === excludeSessionId) continue;
+    const usage = buildUsageMap(session.childSocks, session.parentSocks);
+    for (const [key, quantity] of Array.from(usage.entries())) {
+      usedMap.set(key, (usedMap.get(key) ?? 0) + quantity);
+    }
+  }
+
+  const allKeys = new Set([...Array.from(initialMap.keys()), ...Array.from(usedMap.keys())]);
+  return Array.from(allKeys)
+    .map((key) => {
+      const [category, size] = key.split(":") as [SockCategory, string];
+      const initialQuantity = initialMap.get(key) ?? 0;
+      const usedQuantity = usedMap.get(key) ?? 0;
+      return {
+        category,
+        size,
+        initialQuantity,
+        usedQuantity,
+        availableQuantity: initialQuantity - usedQuantity,
+      };
+    })
+    .sort((a, b) => a.category.localeCompare(b.category) || a.size.localeCompare(b.size));
+}
+
+async function ensureInventoryAvailability(
+  shopId: number | null,
+  childSocks?: string | null,
+  parentSocks?: string | null,
+  excludeSessionId?: number,
+) {
+  if (!shopId) {
+    return;
+  }
+
+  const requestedUsage = buildUsageMap(childSocks, parentSocks);
+  if (requestedUsage.size === 0) {
+    return;
+  }
+
+  const availability = await getInventoryAvailability(shopId, excludeSessionId);
+  const availabilityMap = new Map(
+    availability.map((item) => [`${item.category}:${item.size}`, item.availableQuantity]),
+  );
+
+  for (const [key, quantity] of Array.from(requestedUsage.entries())) {
+    const availableQuantity = availabilityMap.get(key) ?? 0;
+    if (quantity > availableQuantity) {
+      const [category, size] = key.split(":");
+      throw new Error(`Not enough ${category} socks available for size ${size}`);
+    }
+  }
+}
+
 // ── Auth middleware ──────────────────────────────────────────────────────────
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) return res.status(401).json({ message: "Unauthorized" });
@@ -26,6 +222,47 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+
+  const billingFieldSchema = z.object({
+    label: z.string().trim().min(1).max(100),
+    fieldType: z.enum(["text", "number", "date", "select"]).default("text"),
+    required: z.boolean().optional(),
+    options: z.array(z.string().trim().min(1).max(100)).optional(),
+    sortOrder: z.number().int().min(0).optional(),
+    active: z.boolean().optional(),
+  });
+  const customerSchema = z.object({
+    name: z.string().trim().min(1).max(150),
+    phone: z.string().trim().min(3).max(30),
+    dateOfBirth: z.string().date().nullable().optional(),
+    customFields: z.array(z.object({ id: z.string(), label: z.string(), value: z.string() })).optional(),
+  });
+  const planSchema = z.object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    totalHours: z.number().positive().max(10000),
+    price: z.number().positive().max(10000000),
+    durationDays: z.number().int().positive().max(3650).nullable().optional(),
+    active: z.boolean().optional(),
+  });
+  const assignmentSchema = z.object({ customerId: z.number().int().positive(), planId: z.number().int().positive() });
+  const upgradeSchema = z.object({ planId: z.number().int().positive() });
+  const consumeSchema = z.object({ hoursUsed: z.number().positive().max(10000), note: z.string().trim().max(500).nullable().optional() });
+  const createSessionSchema = insertSessionSchema.extend({ customerId: z.number().int().positive() });
+  const paymentSchema = z.object({
+    customerPlanId: z.number().int().positive(),
+    amount: z.number().positive().max(10000000),
+    paymentMethod: z.enum(["cash", "card", "upi"]),
+  });
+  const planPurchaseSchema = z.object({
+    customerId: z.number().int().positive(),
+    planId: z.number().int().positive(),
+    paymentMethod: z.enum(["cash", "card", "upi"]),
+  });
+
+  function currentShopId(req: Request): number | undefined {
+    return req.session.shopId ?? undefined;
+  }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +367,73 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get("/api/shops/:id/socks-inventory", requireAdmin, async (req, res) => {
+    try {
+      const rawShopId = getRouteParam(req.params.id);
+      const shopId = Number.parseInt(rawShopId ?? "", 10);
+      if (Number.isNaN(shopId)) return res.status(400).json({ message: "Invalid shop ID" });
+
+      const shop = await storage.getShop(shopId);
+      if (!shop) return res.status(404).json({ message: "Shop not found" });
+
+      return res.json(await getInventoryAvailability(shopId));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/shops/:id/socks-inventory/import", requireAdmin, async (req, res) => {
+    try {
+      const rawShopId = getRouteParam(req.params.id);
+      const shopId = Number.parseInt(rawShopId ?? "", 10);
+      if (Number.isNaN(shopId)) return res.status(400).json({ message: "Invalid shop ID" });
+
+      const shop = await storage.getShop(shopId);
+      if (!shop) return res.status(404).json({ message: "Shop not found" });
+
+      const csvText = typeof req.body?.csvText === "string" ? req.body.csvText : "";
+      const items = parseInventoryCsv(csvText);
+      await storage.replaceSocksInventory(shopId, items);
+
+      return res.json({
+        message: "Inventory imported successfully",
+        items: await getInventoryAvailability(shopId),
+      });
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/shops/:id/socks-inventory/export", requireAdmin, async (req, res) => {
+    try {
+      const rawShopId = getRouteParam(req.params.id);
+      const shopId = Number.parseInt(rawShopId ?? "", 10);
+      if (Number.isNaN(shopId)) return res.status(400).json({ message: "Invalid shop ID" });
+
+      const shop = await storage.getShop(shopId);
+      if (!shop) return res.status(404).json({ message: "Shop not found" });
+
+      const items = await getInventoryAvailability(shopId);
+      const csv = [
+        "category,size,initial_quantity,used_quantity,available_quantity",
+        ...items.map((item) => [
+          item.category,
+          item.size,
+          item.initialQuantity,
+          item.usedQuantity,
+          item.availableQuantity,
+        ].join(",")),
+      ].join("\n");
+
+      const safeShopName = shop.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="socks-inventory-${safeShopName || shop.id}.csv"`);
+      return res.send(csv);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
   // Create shop (admin)
   const createShopSchema = z.object({
     name: z.string().min(1).max(100),
@@ -151,7 +455,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Delete shop (admin)
   app.delete("/api/shops/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const rawId = getRouteParam(req.params.id);
+      const id = parseInt(rawId ?? "", 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid shop ID" });
       await storage.deleteShop(id);
       return res.json({ message: "Shop deleted" });
@@ -163,7 +468,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get users assigned to a shop (admin)
   app.get("/api/shops/:id/users", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const rawId = getRouteParam(req.params.id);
+      const id = parseInt(rawId ?? "", 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid shop ID" });
       const result = await storage.getUsersByShop(id);
       return res.json(result.map(u => ({ id: u.id, username: u.username, role: u.role, shopRole: u.shopRole })));
@@ -180,7 +486,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/shops/:id/users", requireAdmin, async (req, res) => {
     try {
-      const shopId = parseInt(req.params.id, 10);
+      const rawShopId = getRouteParam(req.params.id);
+      const shopId = parseInt(rawShopId ?? "", 10);
       if (isNaN(shopId)) return res.status(400).json({ message: "Invalid shop ID" });
       const parsed = assignUserSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid data" });
@@ -198,9 +505,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Remove user from shop (admin)
   app.delete("/api/shops/:id/users/:userId", requireAdmin, async (req, res) => {
     try {
-      const shopId = parseInt(req.params.id, 10);
-      const { userId } = req.params;
+      const rawShopId = getRouteParam(req.params.id);
+      const shopId = parseInt(rawShopId ?? "", 10);
+      const userId = getRouteParam(req.params.userId);
       if (isNaN(shopId)) return res.status(400).json({ message: "Invalid shop ID" });
+      if (!userId) return res.status(400).json({ message: "Invalid user ID" });
       await storage.removeUserFromShop(userId, shopId);
       return res.json({ message: "User removed from shop" });
     } catch (err: any) {
@@ -211,7 +520,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Get shops for a specific user (admin)
   app.get("/api/users/:id/shops", requireAdmin, async (req, res) => {
     try {
-      const shops = await storage.getShopsByUser(req.params.id);
+      const userId = getRouteParam(req.params.id);
+      if (!userId) return res.status(400).json({ message: "Invalid user ID" });
+      const shops = await storage.getShopsByUser(userId);
       return res.json(shops);
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
@@ -221,7 +532,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ── User management (admin only) ─────────────────────────────────────────
   const createUserSchema = z.object({
     username: z.string().min(2).max(50),
-    password: z.string().min(4),
+    password: z.string().min(10).max(128),
     role: z.enum(["admin", "staff"]).default("staff"),
   });
 
@@ -253,10 +564,263 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/users/:id", requireAdmin, async (req, res) => {
     try {
-      const { id } = req.params;
+      const id = getRouteParam(req.params.id);
+      if (!id) return res.status(400).json({ message: "Invalid user ID" });
       if (id === req.session.userId) return res.status(400).json({ message: "Cannot delete your own account" });
       await storage.deleteUser(id);
       return res.json({ message: "User deleted" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Customer billing and plans ───────────────────────────────────────────
+  app.get("/api/billing/fields", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      return res.json(await storage.listBillingFields(shopId));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/billing/fields", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const parsed = billingFieldSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid billing field", errors: parsed.error.flatten() });
+      return res.status(201).json(await storage.createBillingField(shopId, parsed.data));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/billing/fields/:id", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const id = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(id)) return res.status(400).json({ message: "Invalid request" });
+      const parsed = billingFieldSchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid billing field" });
+      const field = await storage.updateBillingField(shopId, id, parsed.data);
+      if (!field) return res.status(404).json({ message: "Billing field not found" });
+      return res.json(field);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/billing/fields/:id", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const id = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(id)) return res.status(400).json({ message: "Invalid request" });
+      await storage.deleteBillingField(shopId, id);
+      return res.json({ message: "Billing field deleted" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/customers", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const phone = typeof req.query.phone === "string" ? req.query.phone.trim() : undefined;
+      return res.json(await storage.listCustomers(shopId, phone));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/customers/:id", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const id = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(id)) return res.status(400).json({ message: "Enter a valid customer ID" });
+      const customer = await storage.getCustomer(shopId, id);
+      if (!customer) return res.status(404).json({ message: "Customer not found" });
+      return res.json(customer);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/customers", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const parsed = customerSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid customer details", errors: parsed.error.flatten() });
+      return res.status(201).json(await storage.createCustomer(shopId, parsed.data));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/customers/:id", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const id = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(id)) return res.status(400).json({ message: "Invalid request" });
+      const parsed = customerSchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid customer details" });
+      const customer = await storage.updateCustomer(shopId, id, parsed.data);
+      if (!customer) return res.status(404).json({ message: "Customer not found" });
+      return res.json(customer);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/plans", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      return res.json(await storage.listPlans(shopId));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/plans", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const parsed = planSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid plan", errors: parsed.error.flatten() });
+      return res.status(201).json(await storage.createPlan(shopId, parsed.data));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/plans/:id", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const id = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(id)) return res.status(400).json({ message: "Invalid request" });
+      const parsed = planSchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid plan" });
+      const plan = await storage.updatePlan(shopId, id, parsed.data);
+      if (!plan) return res.status(404).json({ message: "Plan not found" });
+      return res.json(plan);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/plans/:id", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const id = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(id)) return res.status(400).json({ message: "Invalid request" });
+      await storage.deletePlan(shopId, id);
+      return res.json({ message: "Plan deleted" });
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/customer-plans", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      return res.json(await storage.listCustomerPlans(shopId));
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/customer-plans/customer/:customerId", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const customerId = Number.parseInt(getRouteParam(req.params.customerId) ?? "", 10);
+      if (!shopId || Number.isNaN(customerId)) return res.status(400).json({ message: "Enter a valid customer ID" });
+      const customerPlan = await storage.getActiveCustomerPlan(shopId, customerId);
+      if (!customerPlan) return res.status(404).json({ message: "No active plan found for this customer" });
+      return res.json(customerPlan);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/customer-plans", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const parsed = assignmentSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid plan assignment" });
+      return res.status(201).json(await storage.assignPlan(shopId, parsed.data.customerId, parsed.data.planId));
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/customer-plans/purchase", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const parsed = planPurchaseSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Select a customer, plan, and payment method" });
+      return res.status(201).json(await storage.assignPlanWithPayment(shopId, parsed.data.customerId, parsed.data.planId, parsed.data.paymentMethod));
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/customer-plans/:id/upgrade", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const customerPlanId = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(customerPlanId)) return res.status(400).json({ message: "Invalid request" });
+      const parsed = upgradeSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Select a valid upgrade plan" });
+      return res.json(await storage.upgradePlan(shopId, customerPlanId, parsed.data.planId));
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/customer-plans/:id/usage", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      const customerPlanId = Number.parseInt(getRouteParam(req.params.id) ?? "", 10);
+      if (!shopId || Number.isNaN(customerPlanId)) return res.status(400).json({ message: "Invalid request" });
+      const parsed = consumeSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Enter a valid number of hours" });
+      return res.json(await storage.consumePlanHours(shopId, customerPlanId, parsed.data.hoursUsed, parsed.data.note));
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/payments", requireAuth, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const parsed = paymentSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Enter valid payment details" });
+      return res.status(201).json(await storage.createPayment(shopId, parsed.data));
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/reports", requireAdmin, async (req, res) => {
+    try {
+      const shopId = currentShopId(req);
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const fromText = typeof req.query.from === "string" ? req.query.from : "";
+      const toText = typeof req.query.to === "string" ? req.query.to : "";
+      const from = fromText ? new Date(`${fromText}T00:00:00`) : new Date(0);
+      const to = toText ? new Date(`${toText}T23:59:59.999`) : new Date();
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+        return res.status(400).json({ message: "Enter a valid date range" });
+      }
+      return res.json(await storage.getReports(shopId, from, to));
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
     }
@@ -266,12 +830,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/sessions", requireAuth, async (req, res) => {
     try {
-      const parsed = insertSessionSchema.safeParse(req.body);
+      const parsed = createSessionSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
-      const session = await storage.createSession({
-        ...parsed.data,
-        shopId: req.session.shopId ?? null,
-      });
+      await ensureInventoryAvailability(
+        req.session.shopId ?? null,
+        parsed.data.childSocks,
+        parsed.data.parentSocks ?? null,
+      );
+      const shopId = req.session.shopId;
+      if (!shopId) return res.status(400).json({ message: "Select a shop first" });
+      const { customerId, ...sessionData } = parsed.data;
+      const session = await storage.createSessionWithCustomerPlan(sessionData, shopId, customerId);
       return res.status(201).json(session);
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
@@ -280,10 +849,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/sessions/:id", requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const rawId = getRouteParam(req.params.id);
+      const id = parseInt(rawId ?? "", 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
       const parsed = updateSessionSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      const existingSession = (await storage.getAllSessions(req.session.shopId ?? null)).find((session) => session.id === id);
+      if (!existingSession) return res.status(404).json({ message: "Session not found" });
+
+      await ensureInventoryAvailability(
+        req.session.shopId ?? null,
+        parsed.data.childSocks ?? existingSession.childSocks,
+        parsed.data.parentSocks === undefined ? existingSession.parentSocks : parsed.data.parentSocks,
+        id,
+      );
       const session = await storage.updateSession(id, parsed.data);
       if (!session) return res.status(404).json({ message: "Session not found" });
       return res.json(session);
@@ -294,7 +873,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.patch("/api/sessions/:id/end", requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const rawId = getRouteParam(req.params.id);
+      const id = parseInt(rawId ?? "", 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
       const session = await storage.endSession(id, new Date());
       if (!session) return res.status(404).json({ message: "Session not found" });

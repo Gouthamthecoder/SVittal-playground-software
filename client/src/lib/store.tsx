@@ -11,6 +11,7 @@ export interface CustomField {
 export interface KidEntry {
   id: string;
   sessionId: number;
+  customerId?: number | null;
   kidName: string;
   hoursOfPlay: number;
   parentsCount: number;
@@ -110,6 +111,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const mapped: KidEntry[] = active.map((s: any) => ({
           id: String(s.id),
           sessionId: s.id,
+          customerId: s.customerId ?? null,
           kidName: s.kidName,
           hoursOfPlay: s.hoursOfPlay,
           parentsCount: s.parentsCount,
@@ -194,6 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const mapped: KidEntry[] = active.map((s: any) => ({
         id: String(s.id),
         sessionId: s.id,
+        customerId: s.customerId ?? null,
         kidName: s.kidName,
         hoursOfPlay: s.hoursOfPlay,
         parentsCount: s.parentsCount,
@@ -213,6 +216,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addKid = useCallback(async (kidData: Omit<KidEntry, "id" | "startTime" | "sessionId">) => {
     const payload = {
       kidName: kidData.kidName,
+      customerId: kidData.customerId,
       hoursOfPlay: kidData.hoursOfPlay,
       parentsCount: kidData.parentsCount,
       childSocks: kidData.childSocks,
@@ -225,11 +229,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error("Failed to create session");
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.message || "Failed to create session");
+    }
     const session = await res.json();
     const newKid: KidEntry = {
       id: String(session.id),
       sessionId: session.id,
+      customerId: session.customerId ?? null,
       kidName: session.kidName,
       hoursOfPlay: session.hoursOfPlay,
       parentsCount: session.parentsCount,
@@ -249,7 +257,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) throw new Error("Failed to update session");
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.message || "Failed to update session");
+    }
     const session = await res.json();
     setKids(prev => prev.map(k => k.id === id ? {
       ...k,

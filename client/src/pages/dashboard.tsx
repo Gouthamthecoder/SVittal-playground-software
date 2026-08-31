@@ -12,6 +12,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
+interface CustomerBalance {
+  id: number;
+  remainingHours: number;
+  status: string;
+  customer: { id: number; name: string; phone: string };
+  plan: { name: string };
+}
+
 // ── Reusable Confirm Dialog ───────────────────────────────────────────────────
 function ConfirmDialog({
   open,
@@ -162,8 +170,8 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
       });
       toast({ title: "Updated", description: `${kidName}'s details have been saved.` });
       onClose();
-    } catch {
-      toast({ title: "Error", description: "Could not save changes.", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Could not save changes.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -297,7 +305,7 @@ function EditDialog({ kid, open, onClose }: { kid: KidEntry | null; open: boolea
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { kids, addKid, removeKid, extendTime, getKidStatus, getRemainingMinutes, isLoading } = useStore();
+  const { kids, addKid, removeKid, extendTime, getKidStatus, getRemainingMinutes, isLoading, currentShop } = useStore();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [editingKid, setEditingKid] = useState<KidEntry | null>(null);
@@ -308,11 +316,35 @@ export default function Dashboard() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const [kidName, setKidName] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerBalance | null>(null);
+  const [customerSearching, setCustomerSearching] = useState(false);
   const [hours, setHours] = useState("1");
   const [parents, setParents] = useState("1");
   const [childSocks, setChildSocks] = useState("");
   const [parentSocksInputs, setParentSocksInputs] = useState<string[]>([""]); // one per parent
   const [customFields, setCustomFields] = useState<{ id: string; label: string; value: string }[]>([]);
+
+  useEffect(() => { setCustomerId(""); setSelectedCustomer(null); }, [currentShop?.id]);
+
+  const searchCustomer = async () => {
+    const numericId = Number.parseInt(customerId, 10);
+    if (!customerId || Number.isNaN(numericId)) {
+      toast({ title: "Customer ID required", description: "Enter the six-digit customer ID.", variant: "destructive" });
+      return;
+    }
+    setCustomerSearching(true);
+    try {
+      const res = await fetch(`/api/customer-plans/customer/${numericId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Customer not found");
+      setSelectedCustomer(data);
+      setKidName(data.customer.name);
+    } catch (error: any) {
+      setSelectedCustomer(null);
+      toast({ title: "Customer not available", description: error.message, variant: "destructive" });
+    } finally { setCustomerSearching(false); }
+  };
 
   const handleParentsChange = (val: string) => {
     setParents(val);
@@ -350,6 +382,10 @@ export default function Dashboard() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!customerId || !selectedCustomer) {
+      toast({ title: "Customer required", description: "Select a customer with an active plan.", variant: "destructive" });
+      return;
+    }
     if (!kidName) {
       toast({ title: "Name Required", description: "Please enter the kid's name.", variant: "destructive" });
       return;
@@ -358,11 +394,16 @@ export default function Dashboard() {
       toast({ title: "Socks Required", description: "Please enter the child's socks ID.", variant: "destructive" });
       return;
     }
+    if (parseFloat(hours) > selectedCustomer.remainingHours) {
+      toast({ title: "Insufficient play balance", description: `Only ${selectedCustomer.remainingHours.toFixed(2)} hours are available.`, variant: "destructive" });
+      return;
+    }
 
     setSubmitting(true);
     try {
       const filledSocks = parentSocksInputs.filter(s => s.trim() !== "" && s !== "__none__");
       await addKid({
+        customerId: Number(customerId),
         kidName,
         hoursOfPlay: parseFloat(hours),
         parentsCount: parseInt(parents, 10),
@@ -372,13 +413,15 @@ export default function Dashboard() {
       });
       toast({ title: "Success!", description: `${kidName} has been added to the floor.` });
       setKidName("");
+      setCustomerId("");
+      setSelectedCustomer(null);
       setHours("1");
       setParents("1");
       setChildSocks("");
       setParentSocksInputs([""]);
       setCustomFields([]);
-    } catch {
-      toast({ title: "Error", description: "Failed to add entry. Please try again.", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add entry. Please try again.", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -399,6 +442,27 @@ export default function Dashboard() {
             </div>
             <CardContent className="p-6">
               <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-3">
+                  <Label className="font-bold text-base text-foreground/80">Customer ID & Plan</Label>
+                  <div className="flex gap-2">
+                  <Input
+                    required
+                    value={customerId}
+                    onChange={(event) => { setCustomerId(event.target.value.replace(/\D/g, "").slice(0, 6)); setSelectedCustomer(null); }}
+                    placeholder="Customer ID, e.g. 000123"
+                    inputMode="numeric"
+                    maxLength={6}
+                    className="h-12 text-lg rounded-xl border-2 bg-secondary/30"
+                    data-testid="input-customer-id"
+                  />
+                  <Button type="button" variant="outline" className="h-12 rounded-xl" onClick={searchCustomer} disabled={customerSearching}>
+                    {customerSearching ? "Searching..." : "Search"}
+                  </Button>
+                  </div>
+                  {selectedCustomer && <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm font-semibold text-primary">
+                    #{String(selectedCustomer.customer.id).padStart(6, "0")} · {selectedCustomer.customer.name} · Available balance: {selectedCustomer.remainingHours.toFixed(2)} hours on {selectedCustomer.plan.name}
+                  </p>}
+                </div>
                 <div className="space-y-3">
                   <Label htmlFor="kidName" className="font-bold text-base text-foreground/80">Kid's Name</Label>
                   <Input 
@@ -616,6 +680,7 @@ export default function Dashboard() {
                               <p className="text-sm font-bold text-muted-foreground flex items-center gap-1">
                                 <Users size={14} /> {kid.parentsCount} Parent{kid.parentsCount !== 1 ? 's' : ''}
                               </p>
+                              {kid.customerId && <p className="text-xs font-bold text-primary">Customer ID #{kid.customerId}</p>}
                             </div>
                           </div>
 

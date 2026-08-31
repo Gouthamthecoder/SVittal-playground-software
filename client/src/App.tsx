@@ -9,6 +9,9 @@ import Dashboard from "@/pages/dashboard";
 import Metrics from "@/pages/metrics";
 import Login from "@/pages/login";
 import UserManagement from "@/pages/users";
+import Billing from "@/pages/billing";
+import Plans from "@/pages/plans";
+import Reports from "@/pages/reports";
 import Layout from "@/components/layout";
 import { useEffect } from "react";
 
@@ -46,10 +49,19 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/">
+        <ProtectedRoute component={Billing} />
+      </Route>
+      <Route path="/plans">
+        <ProtectedRoute component={Plans} />
+      </Route>
+      <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />
       </Route>
       <Route path="/metrics">
         <ProtectedRoute component={Metrics} adminOnly />
+      </Route>
+      <Route path="/reports">
+        <ProtectedRoute component={Reports} adminOnly />
       </Route>
       <Route path="/users">
         <ProtectedRoute component={UserManagement} adminOnly />

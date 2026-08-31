@@ -1,9 +1,14 @@
 node_modules
 dist
+.local/
+.vercel/
 .DS_Store
 server/public
 vite.config.ts.*
 *.tar.gz
+*.docx
+docx_render_out*/
+playtracker_export.sql
 
 # Environment / secrets — NEVER commit these
 .env

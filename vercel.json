@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/public",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/login", "destination": "/index.html" },
+    { "source": "/plans", "destination": "/index.html" },
+    { "source": "/dashboard", "destination": "/index.html" },
+    { "source": "/metrics", "destination": "/index.html" },
+    { "source": "/reports", "destination": "/index.html" },
+    { "source": "/users", "destination": "/index.html" }
+  ]
+}

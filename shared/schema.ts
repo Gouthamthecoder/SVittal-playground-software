@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, real, timestamp, jsonb, serial, integer, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, real, timestamp, jsonb, serial, integer, primaryKey, unique, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -49,6 +49,8 @@ export const customFieldSchema = z.object({
 export const sessions = pgTable("sessions", {
   id: serial("id").primaryKey(),
   shopId: integer("shop_id"),
+  customerId: integer("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  customerPlanId: integer("customer_plan_id").references(() => customerPlans.id, { onDelete: "set null" }),
   kidName: text("kid_name").notNull(),
   childSocks: text("child_socks").notNull(),
   parentSocks: text("parent_socks"),
@@ -65,9 +67,100 @@ export const insertSessionSchema = createInsertSchema(sessions).omit({
   inTime: true,
   outTime: true,
   shopId: true,
+  customerId: true,
+  customerPlanId: true,
 }).extend({
   customFields: z.array(customFieldSchema).optional().default([]),
 });
 
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Session = typeof sessions.$inferSelect;
+
+export const socksInventoryItems = pgTable("socks_inventory_items", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  category: varchar("category", { length: 20 }).notNull(),
+  size: varchar("size", { length: 20 }).notNull(),
+  quantity: integer("quantity").notNull().default(0),
+}, (table) => ({
+  shopCategorySizeUnique: unique("socks_inventory_items_shop_category_size_unique").on(
+    table.shopId,
+    table.category,
+    table.size,
+  ),
+}));
+
+export type SocksInventoryItem = typeof socksInventoryItems.$inferSelect;
+export type InsertSocksInventoryItem = typeof socksInventoryItems.$inferInsert;
+
+// ── Customer billing and plans ──────────────────────────────────────────────
+export const billingFields = pgTable("billing_fields", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  fieldType: varchar("field_type", { length: 20 }).notNull().default("text"),
+  required: boolean("required").notNull().default(false),
+  options: jsonb("options").notNull().default(sql`'[]'::jsonb`),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+});
+
+export const customers = pgTable("customers", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  dateOfBirth: text("date_of_birth"),
+  customFields: jsonb("custom_fields").notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const plans = pgTable("plans", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  totalHours: real("total_hours").notNull(),
+  price: real("price"),
+  durationDays: integer("duration_days"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const customerPlans = pgTable("customer_plans", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  customerId: integer("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  planId: integer("plan_id").notNull().references(() => plans.id, { onDelete: "restrict" }),
+  purchasedHours: real("purchased_hours").notNull(),
+  remainingHours: real("remaining_hours").notNull(),
+  startDate: timestamp("start_date").notNull().defaultNow(),
+  endDate: timestamp("end_date"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+});
+
+export const customerPlanUsage = pgTable("customer_plan_usage", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  customerPlanId: integer("customer_plan_id").notNull().references(() => customerPlans.id, { onDelete: "cascade" }),
+  hoursUsed: real("hours_used").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  shopId: integer("shop_id").notNull().references(() => shops.id, { onDelete: "cascade" }),
+  customerId: integer("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  customerPlanId: integer("customer_plan_id").notNull().references(() => customerPlans.id, { onDelete: "cascade" }),
+  amount: real("amount").notNull(),
+  paymentMethod: varchar("payment_method", { length: 20 }).notNull(),
+  paidAt: timestamp("paid_at").notNull().defaultNow(),
+});
+
+export type BillingField = typeof billingFields.$inferSelect;
+export type Customer = typeof customers.$inferSelect;
+export type Plan = typeof plans.$inferSelect;
+export type CustomerPlan = typeof customerPlans.$inferSelect;
+export type CustomerPlanUsage = typeof customerPlanUsage.$inferSelect;
+export type Payment = typeof payments.$inferSelect;

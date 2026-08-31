@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useStore, ShopInfo } from "@/lib/store";
 import { useState, useEffect } from "react";
-import { Users, BarChart3, LogOut, Ticket, UserCog, ChevronDown, Store, Check } from "lucide-react";
+import { Users, BarChart3, LogOut, Ticket, UserCog, ChevronDown, Store, Check, ClipboardList, WalletCards, FileBarChart } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 
@@ -57,6 +57,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <nav className="flex gap-2 bg-secondary p-1 rounded-xl">
           <Link href="/">
             <a className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-bold ${isNavActive('/') ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              <ClipboardList size={20} /> Billing
+            </a>
+          </Link>
+          <Link href="/plans">
+            <a className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-bold ${isNavActive('/plans') ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              <WalletCards size={20} /> Plans
+            </a>
+          </Link>
+          <Link href="/dashboard">
+            <a className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-bold ${isNavActive('/dashboard') ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
               <Users size={20} /> Dashboard
             </a>
           </Link>
@@ -65,6 +75,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/metrics">
                 <a className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-bold ${isNavActive('/metrics') ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                   <BarChart3 size={20} /> Metrics
+                </a>
+              </Link>
+              <Link href="/reports">
+                <a className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-bold ${isNavActive('/reports') ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                  <FileBarChart size={20} /> Reports
                 </a>
               </Link>
               <Link href="/users">
