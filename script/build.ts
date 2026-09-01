@@ -38,6 +38,18 @@ async function buildAll() {
   console.log("building client...");
   await viteBuild();
 
+  console.log("building Vercel API...");
+  await esbuild({
+    entryPoints: ["api/_handler.ts"],
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    target: "node20",
+    outfile: "api/index.js",
+    packages: "external",
+    logLevel: "info",
+  });
+
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
   const allDeps = [
