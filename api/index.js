@@ -46649,7 +46649,10 @@ function initializeApp() {
 }
 
 // api/_handler.ts
-var initialized = initializeApp();
+var initialized = initializeApp().catch((error) => {
+  console.error("[startup] Application initialization failed", error);
+  throw error;
+});
 async function handler(req, res) {
   await initialized;
   return app(req, res);
