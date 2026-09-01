@@ -8,7 +8,7 @@ Use a new Supabase project for production. Do not reuse the local database or co
 
 1. Create a Supabase project and copy its transaction-pooler connection string from **Connect**.
 2. Add `sslmode=require` to the connection string if it is not already present.
-3. Set `DATABASE_URL` locally to that value and run `npm run db:push` once to create the tables.
+3. Vercel runs the committed Drizzle migrations automatically during each deployment. Make sure `DATABASE_URL` is available to both the Preview and Production environments before the first deployment.
 
 ## Vercel environment variables
 
@@ -28,12 +28,13 @@ DEFAULT_ADMIN_USERNAME=<your admin username>
 DEFAULT_ADMIN_PASSWORD=<a strong password of at least 10 characters>
 ```
 
-The application stores production sessions in PostgreSQL and sets secure, HTTP-only cookies. The Vercel configuration serves the Vite build and routes API calls to the serverless Express entry point.
+The application stores production sessions in PostgreSQL and sets secure, HTTP-only cookies. The Vercel build runs `npm run db:migrate` before creating the Vite output, so a new Supabase database receives all application tables automatically. Drizzle records completed migrations in its journal, making later builds safe to repeat.
 
 ## Deploy
 
 1. Push the repository to GitHub without `.env`, `.local`, or database dumps.
 2. Import the repository into Vercel.
-3. Add the environment variables above.
-4. Deploy a preview first and test login, plan purchase, payment, reports, and WhatsApp receipt links.
-5. Promote the verified deployment to production.
+3. Add the environment variables above to both Preview and Production.
+4. Deploy a preview first. The build log should show the `npm run db:migrate` step, and the new tables should appear in Supabase's Table Editor.
+5. Test login, plan purchase, payment, reports, and WhatsApp receipt links.
+6. Promote the verified deployment to production.
