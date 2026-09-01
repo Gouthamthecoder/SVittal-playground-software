@@ -5,7 +5,10 @@ const initialized = initializeApp().catch((error) => {
   throw error;
 });
 
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   await initialized;
   return app(req, res);
 }
+
+// Vercel's Node runtime loads this generated API bundle as CommonJS.
+module.exports = handler;

@@ -43,7 +43,7 @@ async function buildAll() {
     entryPoints: ["api/_handler.ts"],
     platform: "node",
     bundle: true,
-    format: "esm",
+    format: "cjs",
     target: "node20",
     outfile: "api/index.js",
     logLevel: "info",
