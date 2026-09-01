@@ -46,7 +46,6 @@ async function buildAll() {
     format: "esm",
     target: "node20",
     outfile: "api/index.js",
-    packages: "external",
     logLevel: "info",
   });
 
