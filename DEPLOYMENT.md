@@ -28,7 +28,7 @@ DEFAULT_ADMIN_USERNAME=<your admin username>
 DEFAULT_ADMIN_PASSWORD=<a strong password of at least 10 characters>
 ```
 
-The application stores production sessions in PostgreSQL and sets secure, HTTP-only cookies. The Vercel build runs `npm run db:migrate` before creating the Vite output, so a new Supabase database receives all application tables automatically. It also bundles the Express server into the Vercel API function, ensuring its server modules are available at runtime. Drizzle records completed migrations in its journal, making later builds safe to repeat.
+The application stores production sessions in PostgreSQL and sets secure, HTTP-only cookies. The Vercel build runs `npm run db:migrate` before creating the Vite output, so a new Supabase database receives all application tables automatically. The committed API bundle gives Vercel a function entrypoint during import, and the build regenerates that bundle from the server source. Drizzle records completed migrations in its journal, making later builds safe to repeat.
 
 ## Deploy
 

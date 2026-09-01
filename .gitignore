@@ -21,6 +21,3 @@ playtracker_export.sql
 
 # Drizzle generated migrations output
 drizzle/
-
-# Generated Vercel serverless entrypoint
-api/index.js
