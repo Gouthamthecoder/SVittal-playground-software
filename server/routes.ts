@@ -99,6 +99,14 @@ function parseCsvLine(line: string): string[] {
   return values;
 }
 
+function normalizeCsvHeader(value: string): string {
+  return value
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function parseInventoryCsv(csvText: string) {
   const lines = csvText
     .split(/\r?\n/)
@@ -109,13 +117,20 @@ function parseInventoryCsv(csvText: string) {
     throw new Error("Inventory CSV must include a header row and at least one data row");
   }
 
-  const headers = parseCsvLine(lines[0]).map((header) => header.trim().toLowerCase());
-  const categoryIndex = headers.findIndex((header) => ["category", "type"].includes(header));
-  const sizeIndex = headers.findIndex((header) => header === "size");
-  const quantityIndex = headers.findIndex((header) => ["quantity", "count", "stock"].includes(header));
+  const sourceHeaders = parseCsvLine(lines[0]);
+  const headers = sourceHeaders.map(normalizeCsvHeader);
+  const categoryIndex = headers.findIndex((header) => [
+    "category", "type", "sockcategory", "socktype", "sockstype",
+  ].includes(header));
+  const sizeIndex = headers.findIndex((header) => ["size", "socksize", "sockssize"].includes(header));
+  const quantityIndex = headers.findIndex((header) => [
+    "quantity", "qty", "count", "stock", "availablequantity", "availableqty", "availablecount",
+  ].includes(header));
 
   if (categoryIndex === -1 || sizeIndex === -1 || quantityIndex === -1) {
-    throw new Error("Inventory CSV must contain category/type, size, and quantity columns");
+    throw new Error(
+      `Inventory CSV needs category/type, size, and quantity columns. Found: ${sourceHeaders.join(", ")}`,
+    );
   }
 
   const merged = new Map<string, { category: SockCategory; size: string; quantity: number }>();
